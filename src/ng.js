@@ -2,6 +2,7 @@
 
 var _ = require('lodash');
 var validPropertyName = require('./validPropertyName');
+var EventEmitter = require('./eventEmitter');
 
 var Ng = (function () {
 	function Ng() {
@@ -9,8 +10,12 @@ var Ng = (function () {
 			return new Ng();
 		}
 
+		EventEmitter.call(this);
+
 		this.$$phase = Ng.phaseEnum.SETUP;
 		this.$$modules = {};
+
+		this.module('ng', []);
 	}
 
 	Ng.singleton = function () {
@@ -25,6 +30,17 @@ var Ng = (function () {
 		LOADING: 1,
 		READY: 2
 	};
+
+	Ng.phaseEventNames = {
+		SETUP: '$phase.SETUP',
+		LOADING: '$phase.LOADING',
+		READY: '$phase.READY'
+	};
+
+	Ng.prototype.on = EventEmitter.prototype.on;
+	Ng.prototype.once = EventEmitter.prototype.once;
+	Ng.prototype.off = EventEmitter.prototype.off;
+	Ng.prototype.$$emit = EventEmitter.prototype.emit;
 
 	Ng.prototype.module = function (moduleName, requires) {
 		//create module
@@ -51,11 +67,10 @@ var Ng = (function () {
 		}
 
 		this.$$phase = Ng.phaseEnum.LOADING;
-		_.forEach(this.$$modules, function (mod) {
-			mod.$$load();
-		});
+		this.$$emit(Ng.phaseEventNames.LOADING);
 
 		this.$$phase = Ng.phaseEnum.READY;
+		this.$$emit(Ng.phaseEventNames.READY);
 	};
 
 	Ng.prototype.isSetup = function () {
@@ -76,109 +91,172 @@ module.exports = Ng;
 
 var Module = (function () {
 
-	function Module(ngInstance, name, requires) {
+	function Module(ngInstance, name, dependencies) {
 		this.name = name;
-		this.requires = requires;
+		this.dependencies = dependencies;
 		this.$$ng = ngInstance;
+
 		this.$$services = [];
-		this.$$constants = [];
 		this.$$runs = [];
-		this.$$cache = null;
+		this.$$nowLoadingService = null;
+
+		this.$$serviceCache = null;
+		this.$$dependencyModules = [];
+
+		this.$$ng
+			.once(Ng.phaseEventNames.LOADING, this.$$onload.bind(this))
+			.once(Ng.phaseEventNames.READY, this.$$onready.bind(this));
 	}
 
-	Module.prototype.service = function (name, requires, constructor) {
+	Module.prototype.service = function (name, requiresOrContructor, constructorOpt) {
 		if (!this.$$ng.isSetup()) {
 			throw new Error('Module(' + this.name + ')::service(' + name + '): phase is not SETUP');
 		}
 
-		this.$$services.push({
-			name: name,
-			requires: requires,
-			constructor: constructor
-		});
-	};
-
-	Module.prototype.constant = function (name, value) {
-		if (!this.$$ng.isSetup()) {
-			throw new Error('Module(' + this.name + ')::constant(' + name + '): phase is not SETUP');
+		var injects = arguments.length > 2 ? requiresOrContructor : null;
+		var constructor = arguments.length > 2 ? constructorOpt : _.isFunction(requiresOrContructor) ? requiresOrContructor : null;
+		if (!_.isFunction(constructor)) {
+			throw new Error('Module(' + this.name + ')::service(' + name + '): constructor is not a Function');
 		}
 
-		var c = Object.create(null);
-		c[name] = value;
-		this.$$constants.push(c);
+		this.$$services.push({
+			name: name,
+			inject: injects,
+			constructor: constructor
+		});
+
+		return this;
 	};
 
-	Module.prototype.run = function (requires, fn) {
+	Module.prototype.run = function (injects, fn) {
 		if (!this.$$ng.isSetup()) {
 			throw new Error('Module(' + this.name + ')::run: phase is not SETUP');
 		}
 
 		this.$$runs.push({
-			requires: requires,
+			inject: injects,
 			fn: fn
 		});
-	};
 
-	Module.prototype.has = function (name) {
-		return this.$$cache.hasOwnProperty(name);
+		return this;
 	};
 
 	Module.prototype.get = function (name) {
-		return this.$$cache[name];
+		var mod = this.find(name);
+		return mod ? mod.$$serviceCache[name] : void 0;
 	};
 
-	Module.prototype.$$load = function () {
-		if (this.$$ng.isReady()) {
-			throw new Error('cannot load module in READY state');
-		}
+	Module.prototype.find = function (name) {
+		return this.$$serviceCache.hasOwnProperty(name) ? this : this.$$findInDependencyModules(name);
+	};
 
+	Module.prototype.$$findInDependencyModules = function (name) {
+		_.forEach(this.$$dependencyModules, function (mod) {
+			if (mod.find(name)) {
+				return mod;
+			}
+		});
+		return void 0;
+	};
+
+	Module.prototype.$$findInServices = function (name) {
+		return _.find(this.$$services, function (srv) {
+			return srv.name === name;
+		}) ? this : this.$$findInDependencyModulesServices(name);
+	};
+
+	Module.prototype.$$findInDependencyModulesServices = function (name) {
+		_.forEach(this.$$dependencyModules, function (mod) {
+			if (mod.$$findInServices(name)) {
+				return mod;
+			}
+		});
+		return void 0;
+	};
+
+	Module.prototype.$$instantiate = function (constructor, requires) {
+		var instance = Object.create(constructor.prototype);
+		this.$$invoke(constructor, requires, instance);
+		return instance;
+	};
+
+	Module.prototype.$$invoke = function (fn, requires, context) {
+		var self = this;
+		return fn.apply(context, _.map(requires, function (req) {
+			return self.get(req);
+		}));
+	};
+
+	Module.prototype.$$loadService = function (item) {
 		var self = this;
 
-		if (!this.$$cache) {
-			this.$$cache = {};
+		//current loading service
+		this.$$nowLoadingService = item.name;
 
-			//requires
-			_.forEach(this.requires, function (item) {
-				var module = self.$$ng.module(item);
-				_.assign(self.$$cache, module.$$load());
-			});
+		//preconstruct service
+		this.$$serviceCache[item.name] = Object.create(item.constructor.prototype);
 
-			//constants
-			_.forEach(this.$$constants, function (item) {
-				_.assign(self.$$cache, item);
-			});
-			this.$$constants = null;
+		//check all injectable dependencies ready
+		_.forEach(item.inject, function (req) {
+			//check if already initialized
+			var mod = self.find(req);
+			if (!mod) {
+				//check if was added
+				mod = self.$$findInServices(req);
+				if (mod) {
+					//added but not loaded
+					if (mod.$$nowLoadingService) {
+						//module is now initializing
+						if (mod.$$nowLoadingService !== req) {
+							mod.$$loadService(req);
+						}
+					} else {
+						//module is not initializing
+						mod.$$onload();
+					}
+				} else {
+					//could not find
+					throw new Error('Module(' + self.name + ')::$$loadService: could not find injected dependency ' + req);
+				}
+			}
+		});
 
-			//services
-			_.forEach(this.$$services, function (item) {
-				//get requires instances
-				var requires = self.$$getRequiredObjects(item.requires);
+		//construct service
+		this.$$invoke(item.constructor, item.inject, this.$$serviceCache[item.name]);
 
-				//construct
-				var instance = Object.create(item.constructor.prototype);
-				item.constructor.apply(instance, requires);
-
-				self.$$cache[item.name] = instance;
-			});
-			this.$$services = null;
-
-			//runs
-			_.forEach(this.$$runs, function (item) {
-				//get requires instances
-				var requires = self.$$getRequiredObjects(item.requires);
-
-				item.fn.apply(null, requires);
-			});
-			this.$$runs = null;
-		}
-
-		return this.$$cache;
+		//release loading guard
+		this.$$nowLoadingService = null;
 	};
 
-	Module.prototype.$$getRequiredObjects = function (requires) {
-		return _.map(requires, function (req) {
-			return this.$$cache[req]
+	Module.prototype.$$onload = function () {
+		var self = this;
+
+		if (!this.$$serviceCache) {
+			this.$$serviceCache = {};
+
+			//requires
+			this.$$dependencyModules = _.map(this.inject, function (moduleName) {
+				return self.$$ng.module(moduleName);
+			});
+
+			//prepare services
+			_.forEach(this.$$services, function (item) {
+				self.$$loadService(item);
+			});
+			this.$$services = null;
+		}
+
+		return this;
+	};
+
+	Module.prototype.$$onready = function () {
+		var self = this;
+
+		//runs
+		_.forEach(this.$$runs, function (item) {
+			self.$$invoke(item.fn, item.inject);
 		});
+		this.$$runs = null;
 	};
 
 	return Module;
