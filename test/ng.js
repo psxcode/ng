@@ -45,34 +45,152 @@ describe('Ng and Modules', function () {
 	it('loads multiple modules', function () {
 		var numMods = 3;
 		for (var i = 0; i < numMods; ++i) {
-			ng.module(('mod' + i), []).constant(('const' + i), i);
+			ng.module(('mod' + i), []);
 		}
 
 		ng.init();
 
 		for (i = 0; i < numMods; ++i) {
-			expect(ng.module('mod' + i).get('const' + i)).toEqual(i);
+			expect(ng.module('mod' + i)).toBeDefined();
 		}
 	});
 
-	it('loads required modules of module', function () {
+	it('registers value and finds module', function () {
+		ng.module('mod', []).value('val', 42);
+
+		ng.init();
+
+		expect(ng.module('mod').find('val')).toBe(ng.module('mod'));
+	});
+
+	it('registers value and gets its value', function () {
+		ng.module('mod', []).value('val', 42);
+
+		ng.init();
+
+		expect(ng.module('mod').get('val')).toEqual(42);
+	});
+
+	it('registers and gets service', function () {
+		ng.module('mod', [])
+			.service('srv', function () {
+				this.val = 42;
+			});
+
+		ng.init();
+
+		expect(ng.module('mod').get('srv')).toBeDefined();
+		expect(ng.module('mod').get('srv').val).toEqual(42);
+	});
+
+	it('finds a value in dependent module', function () {
+		ng.module('mod1', [])
+			.value('val', 42);
+		ng.module('mod2', ['mod1']);
+
+		ng.init();
+
+		expect(ng.module('mod2').find('val')).toBe(ng.module('mod1'));
+	});
+
+	it('gets a value from dependent module', function () {
+		ng.module('mod1', [])
+			.value('val', 42);
+		ng.module('mod2', ['mod1']);
+
+		ng.init();
+
+		expect(ng.module('mod2').get('val')).toEqual(42);
+	});
+
+	it('finds a service in dependent module', function () {
+		ng.module('mod1', [])
+			.service('srv', function () {
+				this.val = 42;
+			});
+		ng.module('mod2', ['mod1']);
+
+		ng.init();
+
+		expect(ng.module('mod2').find('srv')).toBe(ng.module('mod1'));
+	});
+
+	it('gets a service\'s value from dependent module', function () {
+		ng.module('mod1', [])
+			.service('srv', function () {
+				this.val = 42;
+			});
+		ng.module('mod2', ['mod1']);
+
+		ng.init();
+
+		expect(ng.module('mod2').get('srv')).toBeDefined();
+		expect(ng.module('mod2').get('srv').val).toEqual(42);
+	});
+
+	it('finds deep \'value\'s module', function () {
 		ng.module('mod1', []);
 		ng.module('mod2', ['mod1']);
 		ng.module('mod3', ['mod2']);
 
-		ng.module('mod1').constant('val', 42);
+		ng.module('mod1')
+			.value('val', 42);
+
+		ng.init();
+
+		expect(ng.module('mod3').find('val')).toBe(ng.module('mod1'));
+	});
+
+	it('gets deep \'value\'', function () {
+		ng.module('mod1', []);
+		ng.module('mod2', ['mod1']);
+		ng.module('mod3', ['mod2']);
+
+		ng.module('mod1')
+			.value('val', 42);
 
 		ng.init();
 
 		expect(ng.module('mod3').get('val')).toEqual(42);
 	});
 
-	it('works with module circular dependencies', function () {
+	it('finds deep \'service\'s module', function () {
+		ng.module('mod1', []);
+		ng.module('mod2', ['mod1']);
+		ng.module('mod3', ['mod2']);
+
+		ng.module('mod1')
+			.service('srv', function () {
+				this.val = 42;
+			});
+
+		ng.init();
+
+		expect(ng.module('mod3').find('srv')).toBe(ng.module('mod1'));
+	});
+
+	it('gets deep \'service\'', function () {
+		ng.module('mod1', []);
+		ng.module('mod2', ['mod1']);
+		ng.module('mod3', ['mod2']);
+
+		ng.module('mod1')
+			.service('srv', function () {
+				this.val = 42;
+			});
+
+		ng.init();
+
+		expect(ng.module('mod3').get('srv')).toBeDefined();
+		expect(ng.module('mod3').get('srv').val).toEqual(42);
+	});
+
+	it('works with module circular \'value\' dependencies', function () {
 		var mod1 = ng.module('mod1', ['mod2']);
 		var mod2 = ng.module('mod2', ['mod1']);
 
-		mod1.constant('val1', 42);
-		mod2.constant('val2', 21);
+		mod1.value('val1', 42);
+		mod2.value('val2', 21);
 
 		ng.init();
 
@@ -80,10 +198,29 @@ describe('Ng and Modules', function () {
 		expect(mod2.get('val1')).toEqual(42);
 	});
 
+	it('works with module circular \'service\' dependencies', function () {
+		var mod1 = ng.module('mod1', ['mod2']);
+		var mod2 = ng.module('mod2', ['mod1']);
+
+		mod1.service('srv1', function () {
+			this.val = 42;
+		});
+		mod2.service('srv2', function () {
+			this.val = 21;
+		});
+
+		ng.init();
+
+		expect(mod1.get('srv2')).toBeDefined();
+		expect(mod2.get('srv1')).toBeDefined();
+		expect(mod1.get('srv2').val).toEqual(21);
+		expect(mod2.get('srv1').val).toEqual(42);
+	});
+
 	it('instantiates annotated function', function () {
 		ng.module('mod', [])
-			.constant('a', 1)
-			.constant('b', 2);
+			.value('a', 1)
+			.value('b', 2);
 
 		function test(a, b) {
 			return a + b;
@@ -97,8 +234,8 @@ describe('Ng and Modules', function () {
 
 	it('instantiates annotated constructor function', function () {
 		ng.module('mod', [])
-			.constant('a', 1)
-			.constant('b', 2);
+			.value('a', 1)
+			.value('b', 2);
 
 		function Test(a, b) {
 			this.result = a + b;
@@ -110,53 +247,88 @@ describe('Ng and Modules', function () {
 		expect(test.result).toEqual(3);
 	});
 
-	it('allows to register and get a constant', function () {
-		ng.module('mod', []).constant('val', 42);
-
-		ng.init();
-
-		expect(ng.module('mod').has('val')).toEqual(true);
-		expect(ng.module('mod').get('val')).toEqual(42);
-	});
-
-	it('allows to register and get service', function () {
-		ng.module('mod', [])
-			.service('srv', function () {
-				this.val = 42;
-			});
-
-		ng.init();
-
-		expect(ng.module('mod').get('srv').val).toEqual(42);
-	});
-
-	it('works with service\'s constant dependencies', function () {
+	it('works with service\'s value dependencies', function () {
 		ng.module('mod', [])
 			.service('srv', ['a', 'b'], function (a, b) {
 				this.result = a + b;
 			})
-			.constant('a', 42)
-			.constant('b', 4);
+			.value('a', 42)
+			.value('b', 4);
 
 		ng.init();
 
 		expect(ng.module('mod').get('srv').result).toEqual(46);
 	});
-	
-	it('works with service\'s service dependencies', function() {
+
+	it('works with service\'s service dependencies', function () {
 		ng.module('mod', [])
-			.service('srv1', ['srv2', 'srv3'], function(a, b) {
-				this.value = a.value + b.value;
+			.service('srv1', ['srv2', 'srv3'], function (a, b) {
+				this.result = a.value + b.value;
 			})
-			.service('srv2', function() {
+			.service('srv2', function () {
 				this.value = 42;
 			})
-			.service('srv3', function() {
+			.service('srv3', function () {
 				this.value = 4;
 			});
 
 		ng.init();
 
-		expect(ng.module('mod').get('srv1').value).toEqual(46);
+		expect(ng.module('mod').get('srv1').result).toEqual(46);
+	});
+
+	it('works with deep service\'s service dependencies', function () {
+		ng.module('mod', [])
+			.service('srv1', ['srv2'], function (a) {
+				this.result = a.value;
+			})
+			.service('srv2', ['srv3'], function (a) {
+				this.value = 42 + a.value;
+			})
+			.service('srv3', function () {
+				this.value = 4;
+			});
+
+		ng.init();
+
+		expect(ng.module('mod').get('srv1').result).toEqual(46);
+	});
+
+	it('works with deep service\'s module and service dependencies', function () {
+		ng.module('mod1', ['mod2'])
+			.service('srv1', ['srv2'], function (a) {
+				this.result = a.value;
+			});
+		ng.module('mod2', ['mod3'])
+			.service('srv2', ['srv3'], function (a) {
+				this.value = 42 + a.value;
+			});
+		ng.module('mod3', [])
+			.service('srv3', function () {
+				this.value = 4;
+			});
+
+		ng.init();
+
+		expect(ng.module('mod1').get('srv1').result).toEqual(46);
+	});
+
+	it('works with deep service\'s module and service circular dependencies', function () {
+		ng.module('mod1', ['mod2'])
+			.service('srv1', ['srv2'], function (a) {
+				this.result = a.value;
+			});
+		ng.module('mod2', ['mod3'])
+			.service('srv2', ['srv3'], function (a) {
+				this.value = 42 + a.value;
+			});
+		ng.module('mod3', ['mod1'])
+			.service('srv3', ['srv1'], function (a) {
+				this.value = 4;
+			});
+
+		ng.init();
+
+		expect(ng.module('mod1').get('srv1').result).toEqual(46);
 	});
 });
