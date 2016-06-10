@@ -1,7 +1,7 @@
 "use strict";
 
 var _ = require('lodash');
-var validPropertyName = require('./validPropertyName');
+var validNames = require('./validNames');
 
 var Ng = (function () {
 	function Ng() {
@@ -11,6 +11,7 @@ var Ng = (function () {
 
 		this.$$modules = {};
 
+		//create default module
 		this.module('ng', []);
 	}
 
@@ -21,10 +22,23 @@ var Ng = (function () {
 		return ng;
 	};
 
-	Ng.prototype.module = function (moduleName, requires) {
+	Ng.prototype.module = function (moduleName, dependentModuleNames) {
+		if(!moduleName || !_.isString(moduleName)) {
+			throw new Error('module name is invalid, ' + moduleName);
+		}
+		
 		//create module
-		if (typeof requires !== 'undefined') {
-			this.$$modules[moduleName] = new Module(this, moduleName, requires);
+		if (_.isArray(dependentModuleNames)) {
+			if(!validNames.validPropertyName(moduleName)) {
+				throw new Error('cannot create module with name ' + moduleName);
+			}
+			
+			_.filter(dependentModuleNames, function(name) {
+				return name && _.isString(name);
+			});
+			//add default module dependency
+			dependentModuleNames.push('ng');
+			this.$$modules[moduleName] = new Module(this, moduleName, dependentModuleNames);
 		}
 
 		//throw if not exist
@@ -77,7 +91,6 @@ var Module = (function () {
 		this.$$services = {};
 		this.$$values = {};
 		this.$$runs = [];
-		this.$$nowLoadingInjectableNames = [];
 
 		this.$$injectablesCache = null;
 
@@ -119,13 +132,13 @@ var Module = (function () {
 		return findOwnThenInDependencies(this, '$$injectablesCache', name);
 	};
 
-	Module.prototype.$$instantiate = function (constructor, injectNames) {
+	Module.prototype.instantiate = function (injectNames, constructor) {
 		var instance = Object.create(constructor.prototype);
-		this.$$invoke(constructor, injectNames, instance);
+		this.invoke(injectNames, constructor, instance);
 		return instance;
 	};
 
-	Module.prototype.$$invoke = function (fn, injectNames, context) {
+	Module.prototype.invoke = function (injectNames, fn, context) {
 		var self = this;
 		return fn.apply(context, _.map(injectNames, function (req) {
 			return self.get(req);
@@ -155,7 +168,6 @@ var Module = (function () {
 				loadServiceByName(this, this.$$services[key].name);
 			}
 		}
-		this.$$nowLoadingInjectableNames = null;
 	};
 
 	Module.prototype.$$postload = function () {
@@ -163,7 +175,7 @@ var Module = (function () {
 
 		//runs
 		_.forEach(this.$$runs, function (item) {
-			self.$$invoke(item.fn, item.injects);
+			self.invoke(item.injects, item.fn);
 		});
 		this.$$runs = null;
 	};
@@ -193,30 +205,28 @@ var Module = (function () {
 		return findOwnThenInDependencies(mod, '$$services', findServiceName);
 	}
 
-	function loadServiceByName(mod, serviceName) {
-		//check if injectable dependency was already loaded
-		if (mod.$$services.hasOwnProperty(serviceName) && mod.$$services[serviceName].instance) return;
-		//check if injectable is not in loading phase right now
-		if (mod.$$nowLoadingInjectableNames.indexOf(serviceName) >= 0) return;
+	function loadServiceByName(mod, injectableName) {
+		//check if service dependency was already loaded on local level
+		if (mod.$$services.hasOwnProperty(injectableName) && mod.$$services[injectableName].instance) return;
 
-		//check if injectable dependency was added on top level
-		if (mod.$$services.hasOwnProperty(serviceName)) {
-			loadService(mod, mod.$$services[serviceName]);
-		} else {
-			//check if injectable dependency was added on deeper levels
-			var modNext = findInServices(mod, serviceName);
-			if (modNext) {
-				loadService(modNext, modNext.$$services[serviceName]);
-			}
-
-			//not found in services. skipping...
+		//check if service dependency was added on local level
+		if (mod.$$services.hasOwnProperty(injectableName)) {
+			return loadService(mod, mod.$$services[injectableName]);
 		}
 
+		//check if injectable already loaded on local level or deeper
+		if (!mod.find(injectableName)) {
+			//check if injectable dependency was added on deeper levels
+			var modNext = findInServices(mod, injectableName);
+			if (modNext) {
+				return loadService(modNext, modNext.$$services[injectableName]);
+			}
+		}
+		
+		//not found in services. skipping...
 	}
 
 	function loadService(mod, serviceToLoad) {
-		//current loading injectable
-		mod.$$nowLoadingInjectableNames.push(serviceToLoad.name);
 		//preconstruct service
 		serviceToLoad.instance = mod.$$injectablesCache[serviceToLoad.name] = Object.create(serviceToLoad.fn.prototype);
 
@@ -228,9 +238,7 @@ var Module = (function () {
 		}
 
 		//construct service
-		mod.$$invoke(serviceToLoad.fn, serviceToLoad.injects, mod.$$injectablesCache[serviceToLoad.name]);
-		//release loading guard
-		mod.$$nowLoadingInjectableNames.pop();
+		mod.invoke(serviceToLoad.injects, serviceToLoad.fn, mod.$$injectablesCache[serviceToLoad.name]);
 	}
 
 	return Module;

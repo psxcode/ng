@@ -217,33 +217,29 @@ describe('Ng and Modules', function () {
 		expect(mod2.get('srv1').val).toEqual(42);
 	});
 
-	it('instantiates annotated function', function () {
+	it('instantiates annotated function and returns it result', function () {
 		ng.module('mod', [])
 			.value('a', 1)
 			.value('b', 2);
 
-		function test(a, b) {
-			return a + b;
-		}
-
 		ng.init();
 
-		var result = ng.module('mod').$$invoke(test, ['a', 'b']);
+		var result = ng.module('mod').invoke(['a', 'b'], function (a, b) {
+			return a + b;
+		});
 		expect(result).toEqual(3);
 	});
 
-	it('instantiates annotated constructor function', function () {
+	it('instantiates annotated constructor function and returns its result', function () {
 		ng.module('mod', [])
 			.value('a', 1)
 			.value('b', 2);
 
-		function Test(a, b) {
-			this.result = a + b;
-		}
-
 		ng.init();
 
-		var test = ng.module('mod').$$instantiate(Test, ['a', 'b']);
+		var test = ng.module('mod').instantiate(['a', 'b'], function (a, b) {
+			this.result = a + b;
+		});
 		expect(test.result).toEqual(3);
 	});
 
@@ -315,20 +311,136 @@ describe('Ng and Modules', function () {
 
 	it('works with deep service\'s module and service circular dependencies', function () {
 		ng.module('mod1', ['mod2'])
-			.service('srv1', ['srv2'], function (a) {
-				this.result = a.value;
+			.service('srv1', ['srv2'], function (srv2) {
+				this.result = srv2.value;
 			});
 		ng.module('mod2', ['mod3'])
-			.service('srv2', ['srv3'], function (a) {
-				this.value = 42 + a.value;
+			.service('srv2', ['srv3'], function (srv3) {
+				this.value = 42 + srv3.value;
 			});
 		ng.module('mod3', ['mod1'])
-			.service('srv3', ['srv1'], function (a) {
+			.service('srv3', ['srv1'], function (srv1) {
 				this.value = 4;
+				this.result = function () {
+					return srv1.result;
+				}
 			});
 
 		ng.init();
 
-		expect(ng.module('mod1').get('srv1').result).toEqual(46);
+		expect(ng.module('mod3').get('srv3').result()).toEqual(46);
+	});
+
+	it('overrides values with services if name collides', function () {
+		ng.module('mod1', [])
+			.service('val1', function () {
+				this.val = 42;
+			})
+			.value('val1', 21);
+
+		ng.init();
+
+		expect(ng.module('mod1').get('val1').val).toBeDefined();
+		expect(ng.module('mod1').get('val1').val).toEqual(42);
+	});
+
+	it('overrides values with services on dependent levels if name collides', function () {
+		ng.module('mod1', ['mod2']);
+		ng.module('mod2', [])
+			.service('val2', function () {
+				this.val = 42;
+			})
+			.value('val2', 21);
+
+		ng.init();
+
+		expect(ng.module('mod1').get('val2').val).toBeDefined();
+		expect(ng.module('mod1').get('val2').val).toEqual(42);
+	});
+
+	it('uses local values if dependent names collide', function () {
+		ng.module('mod1', ['mod2'])
+			.value('val', 42);
+		ng.module('mod2', ['mod1'])
+			.value('val', 21);
+
+		ng.init();
+
+		expect(ng.module('mod1').get('val')).toEqual(42);
+		expect(ng.module('mod2').get('val')).toEqual(21);
+	});
+
+	it('uses local services if dependent names collide', function () {
+		ng.module('mod1', ['mod2'])
+			.service('val', function () {
+				this.val = 42;
+			});
+		ng.module('mod2', ['mod1'])
+			.service('val', function () {
+				this.val = 21;
+			});
+
+		ng.init();
+
+		expect(ng.module('mod1').get('val').val).toEqual(42);
+		expect(ng.module('mod2').get('val').val).toEqual(21);
+	});
+
+	it('uses local values if dependent service names collide', function () {
+		ng.module('mod1', ['mod2'])
+			.value('val', 42);
+		ng.module('mod2', ['mod1'])
+			.service('val', function () {
+				this.val = 21;
+			});
+
+		ng.init();
+
+		expect(ng.module('mod1').get('val')).toEqual(42);
+		expect(ng.module('mod2').get('val').val).toEqual(21);
+	});
+
+	it('uses first dependent value if dependent names collide', function () {
+		ng.module('mod', ['mod1', 'mod2', 'mod3']);
+
+		ng.module('mod3', []).value('val', 21);
+		ng.module('mod2', []).value('val', 42);
+		ng.module('mod1', []);
+
+		ng.init();
+
+		expect(ng.module('mod').get('val')).toEqual(42);
+	});
+
+	it('uses first dependent service if dependent names collide', function () {
+		ng.module('mod', ['mod1', 'mod2', 'mod3']);
+
+		ng.module('mod3', []).service('val', function () {
+			this.val = 21;
+		});
+		ng.module('mod2', []).service('val', function () {
+			this.val = 42;
+		});
+		ng.module('mod1', []);
+
+		ng.init();
+
+		expect(ng.module('mod').get('val').val).toEqual(42);
+	});
+
+	it('invokes annotated runs', function() {
+		ng.module('mod', [])
+			.run(['a'], function(a) {
+				expect(a).toEqual(42);
+			})
+			.run(['srv'], function(srv) {
+				expect(srv.val).toEqual(21);
+			})
+			.service('srv', ['a'], function(a) {
+				this.val = a * 0.5;
+			})
+			.value('a', 42);
+
+		ng.init();
 	});
 });
