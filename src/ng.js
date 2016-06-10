@@ -23,17 +23,17 @@ var Ng = (function () {
 	};
 
 	Ng.prototype.module = function (moduleName, dependentModuleNames) {
-		if(!moduleName || !_.isString(moduleName)) {
+		if (!moduleName || !_.isString(moduleName)) {
 			throw new Error('module name is invalid, ' + moduleName);
 		}
-		
+
 		//create module
 		if (_.isArray(dependentModuleNames)) {
-			if(!validNames.validPropertyName(moduleName)) {
+			if (!validNames.validPropertyName(moduleName)) {
 				throw new Error('cannot create module with name ' + moduleName);
 			}
-			
-			_.filter(dependentModuleNames, function(name) {
+
+			_.filter(dependentModuleNames, function (name) {
 				return name && _.isString(name);
 			});
 			//add default module dependency
@@ -90,6 +90,7 @@ var Module = (function () {
 
 		this.$$services = {};
 		this.$$values = {};
+		this.$$decorators = [];
 		this.$$runs = [];
 
 		this.$$injectablesCache = null;
@@ -111,6 +112,11 @@ var Module = (function () {
 		return this;
 	};
 
+	Module.prototype.decorator = function (name, fn) {
+		this.$$decorators.push(new Injectable('', fn, [name]));
+		return this;
+	};
+
 	Module.prototype.value = function (name, value) {
 		this.$$values[name] = value;
 		return this;
@@ -118,7 +124,6 @@ var Module = (function () {
 
 	Module.prototype.run = function (injects, fn) {
 		this.$$runs.push(new Injectable('', fn, injects));
-
 		return this;
 	};
 
@@ -210,6 +215,7 @@ var Module = (function () {
 		if (mod.$$services.hasOwnProperty(injectableName) && mod.$$services[injectableName].instance) return;
 
 		//check if service dependency was added on local level
+		//this overrides local constants with local services
 		if (mod.$$services.hasOwnProperty(injectableName)) {
 			return loadService(mod, mod.$$services[injectableName]);
 		}
@@ -218,11 +224,13 @@ var Module = (function () {
 		if (!mod.find(injectableName)) {
 			//check if injectable dependency was added on deeper levels
 			var modNext = findInServices(mod, injectableName);
+			//'modNext' should not be 'mod'
 			if (modNext) {
-				return loadService(modNext, modNext.$$services[injectableName]);
+				loadService(modNext, modNext.$$services[injectableName]);
+				return checkDecorateApplyInjectable(mod, injectableName);
 			}
 		}
-		
+
 		//not found in services. skipping...
 	}
 
@@ -239,6 +247,38 @@ var Module = (function () {
 
 		//construct service
 		mod.invoke(serviceToLoad.injects, serviceToLoad.fn, mod.$$injectablesCache[serviceToLoad.name]);
+		//check and decorate in place
+		checkDecorateApplyInjectable(mod, serviceToLoad.name);
+
+		//return decorated service instance
+		return mod.$$injectablesCache[serviceToLoad.name];
+	}
+
+	function checkDecorateApplyAllInstances(mod) {
+		var decorated = void 0;
+		_.forOwn(mod.$$injectablesCache, function (injectableInstance, injectableName) {
+			decorated = checkAndDecorateInjectable(mod, injectableName, injectableInstance);
+			//apply if decorated
+			if (decorated) mod.$$injectablesCache[injectableName] = decorated;
+		});
+	}
+
+	function checkDecorateApplyInjectable(mod, injectableName) {
+		var decorated = checkAndDecorateInjectable(mod, injectableName, mod.$$injectablesCache[injectableName]);
+		//apply if decorated
+		if (decorated) mod.$$injectablesCache[injectableName] = decorated;
+		//return instance
+		return mod.$$injectablesCache[injectableName];
+	}
+
+	function checkAndDecorateInjectable(mod, injectableName, injectableInstance) {
+		var decorators = _.remove(mod.$$decorators, function (dec) {
+			return injectableName === dec.name;
+		});
+
+		return decorators.length ? _.reduce(decorators, function (injectable, dec) {
+			return typeof injectable === 'object' ? dec.fn(Object.create(injectable)) : dec.fn(injectable);
+		}, injectableInstance) : void 0;
 	}
 
 	return Module;
