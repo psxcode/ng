@@ -9,7 +9,7 @@ describe('Ng and Modules', function () {
 		ng = new Ng();
 	});
 
-	it('ng singleton', function () {
+	it('defines ng singleton', function () {
 		expect(Ng.singleton).toBeDefined();
 		expect(Ng.singleton()).toBe(Ng.singleton());
 	});
@@ -328,6 +328,7 @@ describe('Ng and Modules', function () {
 
 		ng.init();
 
+		expect(ng.module('mod1').get('srv1').result).toEqual(46);
 		expect(ng.module('mod3').get('srv3').result()).toEqual(46);
 	});
 
@@ -426,21 +427,5 @@ describe('Ng and Modules', function () {
 		ng.init();
 
 		expect(ng.module('mod').get('val').val).toEqual(42);
-	});
-
-	it('invokes annotated runs', function() {
-		ng.module('mod', [])
-			.run(['a'], function(a) {
-				expect(a).toEqual(42);
-			})
-			.run(['srv'], function(srv) {
-				expect(srv.val).toEqual(21);
-			})
-			.service('srv', ['a'], function(a) {
-				this.val = a * 0.5;
-			})
-			.value('a', 42);
-
-		ng.init();
 	});
 });
