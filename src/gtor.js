@@ -1,82 +1,122 @@
 "use strict";
 
+var _ = require('lodash');
+
+module.exports.SS = SingularSync;
+module.exports.SA = SingularAsync;
+
 function SingularSync() {
-	this.$$value = null;
-	this.$$error = null;
+	this.$$value = undefinedStub;
+	this.$$error = undefinedStub;
 }
 
 SingularSync.prototype.$get = function (fn, errfn) {
-	if (this.$$error) {
-		if (errfn) errfn(this.$$error);
-	} else {
-		if(fn) fn(this.$$value);
+	try {
+		if (this.$$error) {
+			if (errfn) return new SingularSync().$set(errfn(this.$$error));
+		} else {
+			if (fn) return new SingularSync().$set(fn(this.$$value));
+		}
+	} catch (e) {
+		return new SingularSync().$error(e);
 	}
+	return new SingularSync();
 };
 
 SingularSync.prototype.$set = function (val) {
 	this.$$value = val;
-	this.$error = null;
+	this.$error = undefinedStub;
+	return this;
 };
 
 SingularSync.prototype.$error = function (val) {
-	this.$$value = null;
+	this.$$value = undefinedStub;
 	this.$$error = val;
+	return this;
 };
 
-function SingularAsync() {
-	this.$$value = null;
-	this.$$error = null;
-	this.$$fn = [];
-	this.$$errfn = [];
+function SAFn(fn, errfn, donefn) {
+	this.fn = fn;
+	this.errfn = errfn;
+	this.donefn = donefn;
+	this.sa = new SingularAsync();
 }
 
-SingularAsync.prototype.$get = function (fn, errfn) {
-	if(this.$$value !== null) {
-		if(fn) setImmediate(fn, this.$$value);
-	} else if(this.$$error !== null) {
-		if(errfn) setImmediate(errfn, this.$$error);
-	} else {
-		if (fn) this.$$fn.push(fn);
-		if (errfn) this.$$errfn.push(errfn);
+function SingularAsync() {
+	this.$$value = undefinedStub;
+	this.$$error = undefinedStub;
+	this.$$fns = [];
+}
+
+SingularAsync.prototype.$get = function (fn, errfn, donefn) {
+	var fns = new SAFn(fn, errfn, donefn);
+	this.$$fns.push(fns);
+	//check if resolved
+	if (this.$$value !== undefinedStub || this.$$error !== undefinedStub) {
+		singularAsyncInvoke(this);
 	}
+	return fns.sa;
 };
 
 SingularAsync.prototype.$set = function (val) {
-	var self = this;
-
 	//resolve only once
-	if(this.$$value !== null || this.$$error !== null) return;
+	if (this.$$value !== undefinedStub || this.$$error !== undefinedStub) return;
 
 	this.$$value = val;
-	if(this.$$fn.length) {
-		setImmediate(function () {
-			for (var i = 0; i < self.$$fn.length; ++i) {
-				self.$$fn[i](self.$$value);
-			}
-		});
-	}
+	singularAsyncInvoke(this);
 };
 
-SingularAsync.prototype.$error = function(val) {
-	var self = this;
-
+SingularAsync.prototype.$error = function (val) {
 	//resolve only once
-	if(this.$$value !== null || this.$$error !== null) return;
+	if (this.$$value !== undefinedStub || this.$$error !== undefinedStub) return;
 
 	this.$$error = val;
-	if(this.$$errfn.length) {
+	singularAsyncInvoke(this);
+};
+
+function singularAsyncInvoke(sa) {
+	var fn, val, noError = true;
+	if (sa.$$value !== undefinedStub) {
+		fn = 'fn';
+		val = sa.$$value;
+	} else if (sa.$$error !== undefinedStub) {
+		fn = 'errfn';
+		val = sa.$$error;
+		noError = false;
+	} else {
+		return;
+	}
+
+	if (sa.$$fns.length) {
 		setImmediate(function () {
-			for (var i = 0; i < self.$$errfn.length; ++i) {
-				self.$$errfn[i](self.$$error);
+			var fns;
+			while (sa.$$fns.length) {
+				fns = sa.$$fns.shift();
+				if (_.isFunction(fns[fn])) {
+					try {
+						fns.sa.$set(fns[fn](val));
+					} catch (e) {
+						fns.sa.$error(e);
+					}
+				} else {
+					noError ? fns.sa.$set(val) : fns.sa.$error(val);
+				}
+				if (_.isFunction(fns.donefn)) {
+					fns.donefn(noError ? val : void 0);
+				}
 			}
 		});
 	}
-};
+}
 
 function PluralSync() {
 
 }
 
 function PluralAsync() {
+
+}
+
+function undefinedStub() {
 
 }
