@@ -192,7 +192,7 @@ describe('GTOR Singular Async', function () {
 		sa.$error('err');
 
 		setTimeout(function () {
-			expect(donespy).toHaveBeenCalledWith(undefined);
+			expect(donespy).toHaveBeenCalled();
 			done();
 		}, 10);
 	});
@@ -213,7 +213,7 @@ describe('GTOR Singular Async', function () {
 		setTimeout(function () {
 			expect(spy).toHaveBeenCalledWith(42);
 			done();
-		});
+		}, 10);
 	});
 
 	it('does not modify original values in chain', function (done) {
@@ -233,7 +233,7 @@ describe('GTOR Singular Async', function () {
 		setTimeout(function () {
 			expect(spy).toHaveBeenCalledWith(20);
 			done();
-		});
+		}, 10);
 	});
 
 	it('propagates value in chain', function (done) {
@@ -250,7 +250,7 @@ describe('GTOR Singular Async', function () {
 			expect(errspy).not.toHaveBeenCalled();
 			expect(spy).toHaveBeenCalledWith(42);
 			done();
-		});
+		}, 10);
 	});
 
 	it('propagates rejection in chain', function (done) {
@@ -267,7 +267,7 @@ describe('GTOR Singular Async', function () {
 			expect(spy).not.toHaveBeenCalled();
 			expect(errspy).toHaveBeenCalledWith('err');
 			done();
-		});
+		}, 10);
 	});
 
 	it('treats \'error\' function return value as resolution', function (done) {
@@ -276,14 +276,108 @@ describe('GTOR Singular Async', function () {
 
 		var sa = new SA();
 
-		sa.$get(null, function () {return 42;}).$get(spy);
+		sa.$get(null, function () {
+			return 42;
+		}).$get(spy, errspy);
 
 		sa.$error('err');
 
 		setTimeout(function () {
 			expect(spy).toHaveBeenCalledWith(42);
-			expect(errspy).toHaveBeenCalledWith('err');
+			expect(errspy).not.toHaveBeenCalled();
 			done();
-		});
+		}, 10);
+	});
+
+	it('rejects chained value when listener throws', function(done) {
+		var spy = jasmine.createSpy('spy');
+		var errspy = jasmine.createSpy('errspy');
+
+		var sa = new SA();
+
+		sa.$get(function () {
+			throw new Error('');
+		}).$get(spy, errspy);
+
+		sa.$set(42);
+
+		setTimeout(function () {
+			expect(spy).not.toHaveBeenCalled();
+			expect(errspy).toHaveBeenCalled();
+			done();
+		}, 10);
+	});
+
+	it('does not reject current value when listener throws', function(done) {
+		var spy = jasmine.createSpy('spy');
+		var errspy = jasmine.createSpy('errspy');
+
+		var sa = new SA();
+
+		sa.$get(function () {
+			throw new Error('');
+		}, errspy).$get(spy);
+
+		sa.$set(42);
+
+		setTimeout(function () {
+			expect(spy).not.toHaveBeenCalled();
+			expect(errspy).not.toHaveBeenCalled();
+			done();
+		}, 10);
+	});
+
+	it('waits on \'sa\' value returned from listener, and resolves to its value', function(done) {
+		var spy = jasmine.createSpy('spy');
+
+		var sa = new SA();
+
+
+		sa.$get(function(val) {
+			var saval = new SA();
+			setTimeout(function() {
+				saval.$set(val * 2);
+			}, 20);
+			return saval;
+		}).$get(spy);
+
+		setTimeout(function () {
+			expect(spy).not.toHaveBeenCalled();
+
+			sa.$set(21);
+
+			setTimeout(function() {
+				expect(spy).toHaveBeenCalledWith(42);
+				done();
+			}, 30);
+		}, 10);
+	});
+
+	it('waits on \'sa\' value returned from listener, and gets its error', function(done) {
+		var spy = jasmine.createSpy('spy');
+		var errspy = jasmine.createSpy('errspy');
+
+		var sa = new SA();
+
+		sa.$get(function(val) {
+			var saval = new SA();
+			setTimeout(function() {
+				saval.$error('err');
+			}, 20);
+			return saval;
+		}).$get(spy, errspy);
+
+		setTimeout(function () {
+			expect(spy).not.toHaveBeenCalled();
+			expect(errspy).not.toHaveBeenCalled();
+
+			sa.$set(21);
+
+			setTimeout(function() {
+				expect(spy).not.toHaveBeenCalled();
+				expect(errspy).toHaveBeenCalledWith('err');
+				done();
+			}, 30);
+		}, 10);
 	});
 });

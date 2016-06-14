@@ -51,10 +51,14 @@ function SingularAsync() {
 SingularAsync.prototype.$get = function (fn, errfn, donefn) {
 	var fns = new SAFn(fn, errfn, donefn);
 	this.$$fns.push(fns);
+	
 	//check if resolved
-	if (this.$$value !== undefinedStub || this.$$error !== undefinedStub) {
-		singularAsyncInvoke(this);
+	if (this.$$value !== undefinedStub) {
+		saInvokeSet(this);
+	} else if (this.$$error !== undefinedStub) {
+		saInvokeError(this);
 	}
+	
 	return fns.sa;
 };
 
@@ -62,8 +66,12 @@ SingularAsync.prototype.$set = function (val) {
 	//resolve only once
 	if (this.$$value !== undefinedStub || this.$$error !== undefinedStub) return;
 
-	this.$$value = val;
-	singularAsyncInvoke(this);
+	if(_.isFunction(val.$get)) {
+		val.$get(_.bind(this.$set, this), _.bind(this.$error, this));
+	} else {
+		this.$$value = val;
+		saInvokeSet(this);
+	}
 };
 
 SingularAsync.prototype.$error = function (val) {
@@ -71,42 +79,53 @@ SingularAsync.prototype.$error = function (val) {
 	if (this.$$value !== undefinedStub || this.$$error !== undefinedStub) return;
 
 	this.$$error = val;
-	singularAsyncInvoke(this);
+	saInvokeError(this);
 };
 
-function singularAsyncInvoke(sa) {
-	var fn, val, noError = true;
-	if (sa.$$value !== undefinedStub) {
-		fn = 'fn';
-		val = sa.$$value;
-	} else if (sa.$$error !== undefinedStub) {
-		fn = 'errfn';
-		val = sa.$$error;
-		noError = false;
-	} else {
-		return;
-	}
+function saInvokeSet(sa) {
+	if(!sa.$$fns.length) return;
 
-	if (sa.$$fns.length) {
-		setImmediate(function () {
-			var fns;
-			while (sa.$$fns.length) {
-				fns = sa.$$fns.shift();
-				if (_.isFunction(fns[fn])) {
-					try {
-						fns.sa.$set(fns[fn](val));
-					} catch (e) {
-						fns.sa.$error(e);
-					}
-				} else {
-					noError ? fns.sa.$set(val) : fns.sa.$error(val);
+	setImmediate(function() {
+		var fns;
+		while(sa.$$fns.length) {
+			fns = sa.$$fns.shift();
+			if(_.isFunction(fns.fn)) {
+				try {
+					fns.sa.$set(fns.fn(sa.$$value));
+				} catch (e) {
+					fns.sa.$error(e);
 				}
-				if (_.isFunction(fns.donefn)) {
-					fns.donefn(noError ? val : void 0);
-				}
+			} else {
+				fns.sa.$set(sa.$$value);
 			}
-		});
-	}
+			if(_.isFunction(fns.donefn)) {
+				fns.donefn(sa.$$value);
+			}
+		}
+	});
+}
+
+function saInvokeError(sa) {
+	if(!sa.$$fns.length) return;
+
+	setImmediate(function() {
+		var fns;
+		while(sa.$$fns.length) {
+			fns = sa.$$fns.shift();
+			if(_.isFunction(fns.errfn)) {
+				try {
+					fns.sa.$set(fns.errfn(sa.$$error));
+				} catch(e) {
+					fns.sa.$error(e);
+				}
+			} else {
+				fns.sa.$error(sa.$$error);
+			}
+			if(_.isFunction(fns.donefn)) {
+				fns.donefn();
+			}
+		}
+	});
 }
 
 function PluralSync() {
