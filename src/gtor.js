@@ -2,131 +2,216 @@
 
 var _ = require('lodash');
 
-module.exports.SS = SingularSync;
-module.exports.SA = SingularAsync;
+var SingularStatusEnum = {
+	PENDING: 0,
+	RESOLVED: 1,
+	REJECTED: 2
+};
 
-function SingularSync() {
-	this.$$value = undefinedStub;
-	this.$$error = undefinedStub;
+function singularIsPending() {
+	return this.$$status === SingularStatusEnum.PENDING;
 }
 
-SingularSync.prototype.$get = function (fn, errfn) {
-	try {
-		if (this.$$error) {
-			if (errfn) return new SingularSync().$set(errfn(this.$$error));
-		} else {
-			if (fn) return new SingularSync().$set(fn(this.$$value));
-		}
-	} catch (e) {
-		return new SingularSync().$error(e);
-	}
-	return new SingularSync();
-};
-
-SingularSync.prototype.$set = function (val) {
-	this.$$value = val;
-	this.$error = undefinedStub;
-	return this;
-};
-
-SingularSync.prototype.$error = function (val) {
-	this.$$value = undefinedStub;
-	this.$$error = val;
-	return this;
-};
-
-function SAFn(fn, errfn, donefn) {
-	this.fn = fn;
-	this.errfn = errfn;
-	this.donefn = donefn;
-	this.sa = new SingularAsync();
+function singularIsResolved() {
+	return this.$$status === SingularStatusEnum.RESOLVED;
 }
 
-function SingularAsync() {
-	this.$$value = undefinedStub;
-	this.$$error = undefinedStub;
-	this.$$fns = [];
+function singularIsRejected() {
+	return this.$$status === SingularStatusEnum.REJECTED;
 }
 
-SingularAsync.prototype.$get = function (fn, errfn, donefn) {
-	var fns = new SAFn(fn, errfn, donefn);
-	this.$$fns.push(fns);
-	
-	//check if resolved
-	if (this.$$value !== undefinedStub) {
-		saInvokeSet(this);
-	} else if (this.$$error !== undefinedStub) {
-		saInvokeError(this);
+function singularGetProducer() {
+	return {
+		resolve: _.bind(this.resolve, this),
+		reject: _.bind(this.reject, this)
+	};
+}
+
+function singularGetConsumer() {
+	return {
+		'then': _.bind(this.then, this),
+		'catch': _.bind(this.catch, this),
+		'finally': _.bind(this.finally, this)
+	};
+}
+
+var SingularSync = (function () {
+
+	function SingularSync() {
+		this.$$value = initialValue();
+		this.$$status = SingularStatusEnum.PENDING;
 	}
-	
-	return fns.sa;
-};
 
-SingularAsync.prototype.$set = function (val) {
-	//resolve only once
-	if (this.$$value !== undefinedStub || this.$$error !== undefinedStub) return;
+	SingularSync.prototype.isPending = singularIsPending;
+	SingularSync.prototype.isResolved = singularIsResolved;
+	SingularSync.prototype.isRejected = singularIsRejected;
+	SingularSync.prototype.producer = singularGetProducer;
+	SingularSync.prototype.consumer = singularGetConsumer;
 
-	if(_.isFunction(val.$get)) {
-		val.$get(_.bind(this.$set, this), _.bind(this.$error, this));
-	} else {
-		this.$$value = val;
-		saInvokeSet(this);
-	}
-};
-
-SingularAsync.prototype.$error = function (val) {
-	//resolve only once
-	if (this.$$value !== undefinedStub || this.$$error !== undefinedStub) return;
-
-	this.$$error = val;
-	saInvokeError(this);
-};
-
-function saInvokeSet(sa) {
-	if(!sa.$$fns.length) return;
-
-	setImmediate(function() {
-		var fns;
-		while(sa.$$fns.length) {
-			fns = sa.$$fns.shift();
-			if(_.isFunction(fns.fn)) {
+	SingularSync.prototype.then = function (resolveHandler, rejectHandler, doneHandler) {
+		var result = new SingularSync();
+		if (this.isResolved()) {
+			if (_.isFunction(resolveHandler)) {
 				try {
-					fns.sa.$set(fns.fn(sa.$$value));
+					result.resolve(resolveHandler(this.$$value));
 				} catch (e) {
-					fns.sa.$error(e);
+					result.reject(e);
 				}
 			} else {
-				fns.sa.$set(sa.$$value);
+				result.resolve(this.$$value);
 			}
-			if(_.isFunction(fns.donefn)) {
-				fns.donefn(sa.$$value);
-			}
-		}
-	});
-}
-
-function saInvokeError(sa) {
-	if(!sa.$$fns.length) return;
-
-	setImmediate(function() {
-		var fns;
-		while(sa.$$fns.length) {
-			fns = sa.$$fns.shift();
-			if(_.isFunction(fns.errfn)) {
+		} else if (this.isRejected()) {
+			if (_.isFunction(rejectHandler)) {
 				try {
-					fns.sa.$set(fns.errfn(sa.$$error));
-				} catch(e) {
-					fns.sa.$error(e);
+					result.resolve(rejectHandler(this.$$value));
+				} catch (e) {
+					result.reject(e);
 				}
 			} else {
-				fns.sa.$error(sa.$$error);
+				result.reject(this.$$value);
 			}
-			if(_.isFunction(fns.donefn)) {
-				fns.donefn();
+		} else {
+			//must be resolved
+			return this.reject('this is not resolved or rejected').then(resolveHandler, rejectHandler, doneHandler);
+		}
+
+		if (_.isFunction(doneHandler)) {
+			this.isResolved() ? doneHandler(this.$$value) : doneHandler();
+		}
+
+		return result.consumer();
+	};
+
+	SingularSync.prototype.catch = function(handler) {
+		return this.then(null, handler);
+	};
+
+	SingularSync.prototype.finally = function(handler) {
+		if (_.isFunction(handler)) {
+			this.isResolved() ? handler(this.$$value) : handler();
+		}
+		return this.consumer();
+	};
+
+	SingularSync.prototype.resolve = function (val) {
+		if (this.isPending()) {
+			this.$$value = val;
+			this.$$status = SingularStatusEnum.RESOLVED;
+		}
+		return this;
+	};
+
+	SingularSync.prototype.reject = function (val) {
+		if (this.isPending()) {
+			this.$$value = val;
+			this.$$status = SingularStatusEnum.REJECTED;
+		}
+		return this;
+	};
+
+	return SingularSync;
+}());
+
+var SingularAsync = (function () {
+
+	function SAhandler(resolveHandler, rejectHandler, doneHandler) {
+		this.res = resolveHandler;
+		this.err = rejectHandler;
+		this.done = doneHandler;
+		this.sa = new SingularAsync();
+	}
+
+	function SingularAsync() {
+		this.$$value = initialValue();
+		this.$$status = SingularStatusEnum.PENDING;
+		this.$$handlers = [];
+	}
+
+	SingularAsync.prototype.isPending = singularIsPending;
+	SingularAsync.prototype.isResolved = singularIsResolved;
+	SingularAsync.prototype.isRejected = singularIsRejected;
+	SingularAsync.prototype.producer = singularGetProducer;
+	SingularAsync.prototype.consumer = singularGetConsumer;
+
+	SingularAsync.prototype.then = function (resolveHandler, rejectHandler, doneHandler) {
+		var handler = new SAhandler(resolveHandler, rejectHandler, doneHandler);
+		this.$$handlers.push(handler);
+
+		saInvoke(this);
+
+		return handler.sa.consumer();
+	};
+
+	SingularAsync.prototype.catch = function(handler) {
+		return this.then(null, handler);
+	};
+
+	SingularAsync.prototype.finally = function(handler) {
+		this.$$handlers.push(new SAhandler(null, null, handler));
+
+		saInvoke(this);
+
+		return this.consumer();
+	};
+
+	SingularAsync.prototype.resolve = function (val) {
+		//resolve or reject only once
+		if (this.isPending()) {
+			if (_.isFunction(val.then)) {
+				val.then(_.bind(this.resolve, this), _.bind(this.reject, this));
+			} else {
+				this.$$value = val;
+				this.$$status = SingularStatusEnum.RESOLVED;
+				saInvoke(this);
 			}
 		}
-	});
-}
+
+		return this;
+	};
+
+	SingularAsync.prototype.reject = function (val) {
+		//resolve or reject only once
+		if (this.isPending()) {
+			this.$$value = val;
+			this.$$status = SingularStatusEnum.REJECTED;
+			saInvoke(this);
+		}
+
+		return this;
+	};
+
+	function saInvoke(sa) {
+		if (sa.isPending() || !sa.$$handlers.length) return;
+
+		setImmediate(function () {
+			var handler, handlerPropName, saFuncName;
+			if (sa.isResolved()) {
+				handlerPropName = 'res';
+				saFuncName = 'resolve';
+			} else {
+				handlerPropName = 'err';
+				saFuncName = 'reject';
+			}
+			while (sa.$$handlers.length) {
+				handler = sa.$$handlers.shift();
+				if (_.isFunction(handler[handlerPropName])) {
+					try {
+						handler.sa.resolve(handler[handlerPropName](sa.$$value));
+					} catch (e) {
+						handler.sa.reject(e);
+					}
+				} else {
+					handler.sa[saFuncName](sa.$$value);
+				}
+				if (_.isFunction(handler.done)) {
+					sa.isResolved() ? handler.done(sa.$$value) : handler.done();
+				}
+			}
+		});
+	}
+
+	return SingularAsync;
+}());
 
 function PluralSync() {
 
@@ -136,6 +221,9 @@ function PluralAsync() {
 
 }
 
-function undefinedStub() {
+module.exports.SingularSync = SingularSync;
+module.exports.SingularAsync = SingularAsync;
 
+function initialValue() {
+	return initialValue;
 }
