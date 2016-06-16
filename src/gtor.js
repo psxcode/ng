@@ -82,11 +82,11 @@ var SingularSync = (function () {
 		return result.consumer();
 	};
 
-	SingularSync.prototype.catch = function(handler) {
+	SingularSync.prototype.catch = function (handler) {
 		return this.then(null, handler);
 	};
 
-	SingularSync.prototype.finally = function(handler) {
+	SingularSync.prototype.finally = function (handler) {
 		if (_.isFunction(handler)) {
 			this.isResolved() ? handler(this.$$value) : handler();
 		}
@@ -137,19 +137,23 @@ var SingularAsync = (function () {
 		var handler = new SAhandler(resolveHandler, rejectHandler, doneHandler);
 		this.$$handlers.push(handler);
 
-		saInvoke(this);
+		if (!this.isPending()) {
+			process.nextTick(this.$$invoke.bind(this));
+		}
 
 		return handler.sa.consumer();
 	};
 
-	SingularAsync.prototype.catch = function(handler) {
+	SingularAsync.prototype.catch = function (handler) {
 		return this.then(null, handler);
 	};
 
-	SingularAsync.prototype.finally = function(handler) {
+	SingularAsync.prototype.finally = function (handler) {
 		this.$$handlers.push(new SAhandler(null, null, handler));
 
-		saInvoke(this);
+		if (!this.isPending()) {
+			$$invoke(this);
+		}
 
 		return this.consumer();
 	};
@@ -158,15 +162,16 @@ var SingularAsync = (function () {
 		//resolve or reject only once
 		if (this.isPending()) {
 			if (_.isFunction(val.then)) {
-				val.then(_.bind(this.resolve, this), _.bind(this.reject, this));
+				val.then(this.resolve.bind(this), this.reject.bind(this));
 			} else {
 				this.$$value = val;
 				this.$$status = SingularStatusEnum.RESOLVED;
-				saInvoke(this);
 			}
 		}
 
-		return this;
+		if(!this.isPending()) {
+			process.nextTick(this.$$invoke.bind(this));
+		}
 	};
 
 	SingularAsync.prototype.reject = function (val) {
@@ -174,41 +179,36 @@ var SingularAsync = (function () {
 		if (this.isPending()) {
 			this.$$value = val;
 			this.$$status = SingularStatusEnum.REJECTED;
-			saInvoke(this);
 		}
 
-		return this;
+		process.nextTick(this.$$invoke.bind(this));
 	};
 
-	function saInvoke(sa) {
-		if (sa.isPending() || !sa.$$handlers.length) return;
-
-		setImmediate(function () {
-			var handler, handlerPropName, saFuncName;
-			if (sa.isResolved()) {
-				handlerPropName = 'res';
-				saFuncName = 'resolve';
+	SingularAsync.prototype.$$invoke = function() {
+		var handler, handlerPropName, saFuncName;
+		if (this.isResolved()) {
+			handlerPropName = 'res';
+			saFuncName = 'resolve';
+		} else {
+			handlerPropName = 'err';
+			saFuncName = 'reject';
+		}
+		while (this.$$handlers.length) {
+			handler = this.$$handlers.shift();
+			if (_.isFunction(handler[handlerPropName])) {
+				try {
+					handler.sa.resolve(handler[handlerPropName](this.$$value));
+				} catch (e) {
+					handler.sa.reject(e);
+				}
 			} else {
-				handlerPropName = 'err';
-				saFuncName = 'reject';
+				handler.sa[saFuncName](this.$$value);
 			}
-			while (sa.$$handlers.length) {
-				handler = sa.$$handlers.shift();
-				if (_.isFunction(handler[handlerPropName])) {
-					try {
-						handler.sa.resolve(handler[handlerPropName](sa.$$value));
-					} catch (e) {
-						handler.sa.reject(e);
-					}
-				} else {
-					handler.sa[saFuncName](sa.$$value);
-				}
-				if (_.isFunction(handler.done)) {
-					sa.isResolved() ? handler.done(sa.$$value) : handler.done();
-				}
+			if (_.isFunction(handler.done)) {
+				this.isResolved() ? handler.done(this.$$value) : handler.done();
 			}
-		});
-	}
+		}
+	};
 
 	return SingularAsync;
 }());
@@ -225,5 +225,5 @@ module.exports.SingularSync = SingularSync;
 module.exports.SingularAsync = SingularAsync;
 
 function initialValue() {
-	return initialValue;
+	return void 0;
 }

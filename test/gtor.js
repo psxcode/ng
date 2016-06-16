@@ -1,8 +1,11 @@
 "use strict";
 
+var why = require('why-is-node-running');
+
 var gtor = require('../src/gtor');
 var SS = gtor.SingularSync;
 var SA = gtor.SingularAsync;
+
 
 describe('GTOR Singular Sync', function () {
 
@@ -72,6 +75,8 @@ describe('GTOR Singular Sync', function () {
 
 describe('GTOR Singular Async', function () {
 
+	//afterAll(why);
+
 	it('can resolve a value', function (done) {
 		var spy = jasmine.createSpy('spy');
 		var sa = new SA();
@@ -82,7 +87,7 @@ describe('GTOR Singular Async', function () {
 		setTimeout(function () {
 			expect(spy).toHaveBeenCalledWith(42);
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('can reject a value', function (done) {
@@ -98,7 +103,7 @@ describe('GTOR Singular Async', function () {
 			expect(spy).not.toHaveBeenCalled();
 			expect(errspy).toHaveBeenCalledWith('err');
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('works if resolved before adding a listener', function (done) {
@@ -111,7 +116,7 @@ describe('GTOR Singular Async', function () {
 		setTimeout(function () {
 			expect(spy).toHaveBeenCalledWith(42);
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('does not invoke listeners synchronously', function () {
@@ -136,7 +141,7 @@ describe('GTOR Singular Async', function () {
 			expect(spy).toHaveBeenCalledTimes(1);
 			expect(spy).toHaveBeenCalledWith(42);
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('may have multiple callbacks', function (done) {
@@ -153,7 +158,7 @@ describe('GTOR Singular Async', function () {
 			expect(spy1).toHaveBeenCalledWith(42);
 			expect(spy2).toHaveBeenCalledWith(42);
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('invokes callbacks at most once', function (done) {
@@ -173,9 +178,9 @@ describe('GTOR Singular Async', function () {
 				expect(spy1).toHaveBeenCalledTimes(1);
 				expect(spy2).toHaveBeenCalledWith(42);
 				done();
-			}, 10);
+			}, 100);
 
-		}, 10);
+		}, 100);
 	});
 
 	it('cannot resolve once rejected', function (done) {
@@ -197,9 +202,9 @@ describe('GTOR Singular Async', function () {
 				expect(spy).not.toHaveBeenCalled();
 				expect(errspy).toHaveBeenCalledTimes(1);
 				done();
-			}, 10);
+			}, 100);
 
-		}, 10);
+		}, 100);
 	});
 
 	it('does not require full listener set on resolve', function (done) {
@@ -216,7 +221,7 @@ describe('GTOR Singular Async', function () {
 			expect(spy).toHaveBeenCalledWith(42);
 			expect(errspy).not.toHaveBeenCalled();
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('does not require full listener set on reject', function (done) {
@@ -233,7 +238,7 @@ describe('GTOR Singular Async', function () {
 			expect(spy).not.toHaveBeenCalled();
 			expect(errspy).toHaveBeenCalledWith('err');
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('invokes \'done\' function when resolved', function (done) {
@@ -247,7 +252,7 @@ describe('GTOR Singular Async', function () {
 		setTimeout(function () {
 			expect(donespy).toHaveBeenCalledWith(42);
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('invokes \'done\' function when rejected', function (done) {
@@ -261,7 +266,7 @@ describe('GTOR Singular Async', function () {
 		setTimeout(function () {
 			expect(donespy).toHaveBeenCalled();
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('allows chaining handlers', function (done) {
@@ -280,7 +285,7 @@ describe('GTOR Singular Async', function () {
 		setTimeout(function () {
 			expect(spy).toHaveBeenCalledWith(42);
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('does not modify original values in chain', function (done) {
@@ -300,7 +305,7 @@ describe('GTOR Singular Async', function () {
 		setTimeout(function () {
 			expect(spy).toHaveBeenCalledWith(20);
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('propagates value in chain', function (done) {
@@ -321,7 +326,7 @@ describe('GTOR Singular Async', function () {
 			expect(errspy).not.toHaveBeenCalled();
 			expect(spy).toHaveBeenCalledWith(42);
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('propagates rejection in chain', function (done) {
@@ -342,7 +347,7 @@ describe('GTOR Singular Async', function () {
 			expect(spy).not.toHaveBeenCalled();
 			expect(errspy).toHaveBeenCalledWith('err');
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('treats \'error\' function return value as resolution', function (done) {
@@ -361,7 +366,7 @@ describe('GTOR Singular Async', function () {
 			expect(spy).toHaveBeenCalledWith(42);
 			expect(errspy).not.toHaveBeenCalled();
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('rejects chained value when listener throws', function (done) {
@@ -380,7 +385,7 @@ describe('GTOR Singular Async', function () {
 			expect(spy).not.toHaveBeenCalled();
 			expect(errspy).toHaveBeenCalled();
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('does not reject current value when listener throws', function (done) {
@@ -390,8 +395,12 @@ describe('GTOR Singular Async', function () {
 		var sa = new SA();
 
 		sa.then(function () {
-			throw new Error('');
+			throw 'err';
 		}, errspy).then(spy);
+
+		sa.then(function (val) {
+			expect(val).toEqual(42);
+		});
 
 		sa.resolve(42);
 
@@ -399,60 +408,49 @@ describe('GTOR Singular Async', function () {
 			expect(spy).not.toHaveBeenCalled();
 			expect(errspy).not.toHaveBeenCalled();
 			done();
-		}, 10);
+		}, 100);
 	});
 
 	it('waits on \'sa\' value returned from listener, and resolves to its value', function (done) {
-		var spy = jasmine.createSpy('spy');
-
 		var sa = new SA();
 
-
 		sa.then(function (val) {
-			var saval = new SA();
+			var saVal = new SA();
+
+			//resolve later
 			setTimeout(function () {
-				saval.resolve(val * 2);
-			}, 20);
-			return saval;
-		}).then(spy);
+				saVal.resolve(val * 2);
+			}, 100);
 
-		setTimeout(function () {
-			expect(spy).not.toHaveBeenCalled();
+			return saVal;
+		}).then(function (val) {
+			expect(val).toEqual(42);
+			done();
+		});
 
-			sa.resolve(21);
-
-			setTimeout(function () {
-				expect(spy).toHaveBeenCalledWith(42);
-				done();
-			}, 30);
-		}, 10);
+		sa.resolve(21);
 	});
 
 	it('waits on \'sa\' value returned from listener, and gets its error', function (done) {
 		var spy = jasmine.createSpy('spy');
-		var errspy = jasmine.createSpy('errspy');
 
 		var sa = new SA();
 
 		sa.then(function () {
 			var saVal = new SA();
+
+			//reject later
 			setTimeout(function () {
 				saVal.reject('err');
-			}, 20);
+			}, 100);
+
 			return saVal;
-		}).then(spy, errspy);
-
-		setTimeout(function () {
+		}).then(spy, function (e) {
 			expect(spy).not.toHaveBeenCalled();
-			expect(errspy).not.toHaveBeenCalled();
+			expect(e).toEqual('err');
+			done();
+		});
 
-			sa.resolve(21);
-
-			setTimeout(function () {
-				expect(spy).not.toHaveBeenCalled();
-				expect(errspy).toHaveBeenCalledWith('err');
-				done();
-			}, 30);
-		}, 10);
+		sa.resolve(21);
 	});
 });
