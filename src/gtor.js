@@ -138,7 +138,7 @@ var SingularAsync = (function () {
 		this.$$handlers.push(handler);
 
 		if (!this.isPending()) {
-			process.nextTick(this.$$invoke.bind(this));
+			this.$$invoke();
 		}
 
 		return handler.sa.consumer();
@@ -152,7 +152,7 @@ var SingularAsync = (function () {
 		this.$$handlers.push(new SAhandler(null, null, handler));
 
 		if (!this.isPending()) {
-			$$invoke(this);
+			this.$$invoke();
 		}
 
 		return this.consumer();
@@ -162,7 +162,7 @@ var SingularAsync = (function () {
 		//resolve or reject only once
 		if (this.isPending()) {
 			if (_.isFunction(val.then)) {
-				val.then(this.resolve.bind(this), this.reject.bind(this));
+				val.then(_.bind(this.resolve, this), _.bind(this.reject, this));
 			} else {
 				this.$$value = val;
 				this.$$status = SingularStatusEnum.RESOLVED;
@@ -170,7 +170,7 @@ var SingularAsync = (function () {
 		}
 
 		if(!this.isPending()) {
-			process.nextTick(this.$$invoke.bind(this));
+			this.$$invoke();
 		}
 	};
 
@@ -181,33 +181,36 @@ var SingularAsync = (function () {
 			this.$$status = SingularStatusEnum.REJECTED;
 		}
 
-		process.nextTick(this.$$invoke.bind(this));
+		this.$$invoke();
 	};
 
 	SingularAsync.prototype.$$invoke = function() {
-		var handler, handlerPropName, saFuncName;
-		if (this.isResolved()) {
-			handlerPropName = 'res';
-			saFuncName = 'resolve';
-		} else {
-			handlerPropName = 'err';
-			saFuncName = 'reject';
-		}
-		while (this.$$handlers.length) {
-			handler = this.$$handlers.shift();
-			if (_.isFunction(handler[handlerPropName])) {
-				try {
-					handler.sa.resolve(handler[handlerPropName](this.$$value));
-				} catch (e) {
-					handler.sa.reject(e);
-				}
+		var self = this;
+		process.nextTick(function() {
+			var handler, handlerPropName, saFuncName;
+			if (self.isResolved()) {
+				handlerPropName = 'res';
+				saFuncName = 'resolve';
 			} else {
-				handler.sa[saFuncName](this.$$value);
+				handlerPropName = 'err';
+				saFuncName = 'reject';
 			}
-			if (_.isFunction(handler.done)) {
-				this.isResolved() ? handler.done(this.$$value) : handler.done();
+			while (self.$$handlers.length) {
+				handler = self.$$handlers.shift();
+				if (_.isFunction(handler[handlerPropName])) {
+					try {
+						handler.sa.resolve(handler[handlerPropName](self.$$value));
+					} catch (e) {
+						handler.sa.reject(e);
+					}
+				} else {
+					handler.sa[saFuncName](self.$$value);
+				}
+				if (_.isFunction(handler.done)) {
+					self.isResolved() ? handler.done(self.$$value) : handler.done();
+				}
 			}
-		}
+		});
 	};
 
 	return SingularAsync;
