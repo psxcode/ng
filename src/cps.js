@@ -19,6 +19,16 @@ function mapArraySequentialSync(arr, visitor) {
 	return result;
 }
 
+function filterArraySequentialSync(arr, predicate) {
+	var result = [];
+	for (var i = 0; i < arr.length; ++i) {
+		if (predicate(arr[i], i, arr)) {
+			result.push(arr[i]);
+		}
+	}
+	return result;
+}
+
 //visitor is asynchronous
 //function(elem, index, array, done)
 
@@ -78,8 +88,13 @@ function mapArrayParallelAsync(arr, visitor, done) {
 	var result = new Array(arr.length);
 	var iterationsComplete = 0;
 
-	setImmediate(function () {
-		if (iterationsComplete === result.length) {
+	setImmediate(visitBegin);
+
+	//return immediate result
+	return result;
+
+	function visitBegin() {
+		if (iterationsComplete === arr.length) {
 			done(result);
 		} else {
 			for (var i = 0; i < arr.length; ++i) {
@@ -87,10 +102,7 @@ function mapArrayParallelAsync(arr, visitor, done) {
 				visitNext(i);
 			}
 		}
-	});
-
-	//return immediate result
-	return result;
+	}
 
 	function visitNext(index) {
 		visitor(arr[index], index, arr, onVisitorDone);
@@ -98,7 +110,71 @@ function mapArrayParallelAsync(arr, visitor, done) {
 		function onVisitorDone(res) {
 			result[index] = res;
 			// === prevents multiple 'done' call
-			if (++iterationsComplete === result.length) {
+			if (++iterationsComplete === arr.length) {
+				done(result);
+			}
+		}
+	}
+}
+
+function filterArraySequentialAsync(arr, predicate, done) {
+	var result = [];
+
+	visitNext(0);
+
+	//return immediate result
+	return result;
+
+	function visitNext(index) {
+
+		setImmediate(visitCurrent);
+
+		function visitCurrent() {
+			if (index < arr.length) {
+				predicate(arr[index], index, arr, onVisitorDone);
+			} else {
+				done(result);
+			}
+		}
+
+		function onVisitorDone(res) {
+			if (res) {
+				result.push(arr[index]);
+			}
+			visitNext(index + 1);
+		}
+	}
+}
+
+function filterArrayParallelAsync(arr, visitor, done) {
+	var result = [];
+	var iterationsComplete = 0;
+
+	setImmediate(visitBegin);
+
+	//return immediate result
+	return result;
+
+	function visitBegin() {
+		if (iterationsComplete === arr.length) {
+			done(result);
+		} else {
+			for (var i = 0; i < arr.length; ++i) {
+				//capturing index
+				visitNext(i);
+			}
+		}
+	}
+
+	function visitNext(index) {
+		visitor(arr[index], index, arr, onVisitorDone);
+
+		function onVisitorDone(res) {
+			if(res) {
+				result.push(arr[index]);
+			}
+			// === prevents multiple 'done' call
+			if (++iterationsComplete === arr.length) {
 				done(result);
 			}
 		}
@@ -122,6 +198,21 @@ function mapTreeSequentialSync(tree, visitor) {
 			result[i] = mapTreeSequentialSync(tree[i], visitor);
 		} else {
 			result[i] = visitor(tree[i], i, tree);
+		}
+	}
+	return result;
+}
+
+function filterTreeSequentialSync(tree, predicate) {
+	var result = [];
+	for (var i = 0; i < tree.length; ++i) {
+		if (_.isArray(tree[i])) {
+			//can exclude empty arrays here
+			result.push(filterTreeSequentialSync(tree[i], predicate));
+		} else {
+			if(predicate(tree[i], i, tree)) {
+				result.push(tree[i]);
+			}
 		}
 	}
 	return result;
@@ -184,6 +275,44 @@ function mapTreeSequentialAsync(tree, visitor, done) {
 	}
 }
 
+function filterTreeSequentialAsync(tree, predicate, done) {
+	var result = [];
+
+	visitNext(tree, 0, result, done);
+
+	//return immediate result
+	return result;
+
+	function visitNext(tree, index, result, done) {
+
+		setImmediate(visitCurrent);
+
+		function visitCurrent() {
+			if (index < tree.length) {
+				if (_.isArray(tree[index])) {
+					visitNext(tree[index], 0, [], onVisitNextDone);
+				} else {
+					predicate(tree[index], index, tree, onPredicateDone);
+				}
+			} else {
+				done(result);
+			}
+		}
+
+		function onVisitNextDone(res) {
+			result.push(res);
+			visitNext(tree, index + 1, result, done);
+		}
+
+		function onPredicateDone(res) {
+			if(res) {
+				result.push(tree[index]);
+			}
+			visitNext(tree, index + 1, result, done);
+		}
+	}
+}
+
 function mapTreeParallelAsync(tree, visitor, done) {
 	var result = new Array(tree.length);
 
@@ -193,7 +322,7 @@ function mapTreeParallelAsync(tree, visitor, done) {
 		if (completeCount === tree.length) {
 			done(result);
 		} else {
-			for (var i = 0; i < result.length; ++i) {
+			for (var i = 0; i < tree.length; ++i) {
 				visitNext(tree, i, result, onVisitComplete);
 			}
 		}
@@ -228,15 +357,76 @@ function mapTreeParallelAsync(tree, visitor, done) {
 	}
 }
 
+function filterTreeParallelAsync(tree, predicate, done) {
+	var result = [];
+
+	var completeCount = 0;
+
+	setImmediate(function () {
+		if (completeCount === tree.length) {
+			done(result);
+		} else {
+			for (var i = 0; i < tree.length; ++i) {
+				visitNext(tree, i, result, onVisitComplete);
+			}
+		}
+	});
+
+	function visitNext(tree, index, result, done) {
+
+		var completeCount = 0;
+
+		if (completeCount < tree.length) {
+			if (_.isArray(tree[index])) {
+				visitNext(tree[index], 0, new Array(tree[index].length), onVisitNextDone);
+			} else {
+				predicate(tree[index], index, tree, onPredicateDone);
+			}
+		} else {
+			done(result);
+		}
+
+		function onVisitNextDone(res) {
+			result.push(res);
+			if (++completeCount === tree.length) {
+				done(result);
+			}
+		}
+
+		function onPredicateDone(res) {
+			if(res) {
+				result.push(tree[index]);
+			}
+			if (++completeCount === tree.length) {
+				done(result);
+			}
+		}
+	}
+
+	function onVisitComplete() {
+		if (++completeCount === tree.length) {
+			done(result);
+		}
+	}
+}
+
 exports.visitArraySequentialSync = visitArraySequentialSync;
 exports.mapArraySequentialSync = mapArraySequentialSync;
+exports.filterArraySequentialSync = filterArraySequentialSync;
+
 exports.visitArraySequentialAsync = visitArraySequentialAsync;
 exports.mapArraySequentialAsync = mapArraySequentialAsync;
+exports.filterArraySequentialAsync = filterArraySequentialAsync;
 exports.mapArrayParallelAsync = mapArrayParallelAsync;
+exports.filterArrayParallelAsync = filterArrayParallelAsync;
+
 exports.visitTreeSequentialSync = visitTreeSequentialSync;
 exports.mapTreeSequentialSync = mapTreeSequentialSync;
+exports.filterTreeSequentialSync = filterTreeSequentialSync;
 exports.visitTreeSequentialAsync = visitTreeSequentialAsync;
 exports.mapTreeSequentialAsync = mapTreeSequentialAsync;
+exports.filterTreeSequentialAsync = filterTreeSequentialAsync;
 exports.mapTreeParallelAsync = mapTreeParallelAsync;
+exports.filterTreeParallelAsync = filterTreeParallelAsync;
 
 

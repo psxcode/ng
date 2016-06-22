@@ -34,6 +34,23 @@ describe('CPS', function () {
 		expect(result).toEqual([2, 4, 6]);
 	});
 
+	it('filters array sequentially and synchronously', function() {
+		var arr = [1, 2, 3];
+		var index = 0;
+
+		var result = cps.filterArraySequentialSync(arr, function (val) {
+			//check sequentiality
+			expect(val).toEqual(arr[index++]);
+			return val > 1;
+		});
+
+		//check synchronous
+		expect(index).toEqual(arr.length);
+
+		//check mapping
+		expect(result).toEqual([2, 3]);
+	});
+
 	it('visits array sequentially and asynchronously', function (done) {
 		var arr = [1, 2, 3];
 		var index = 0;
@@ -85,6 +102,28 @@ describe('CPS', function () {
 		expect(immediateResult).toEqual(new Array(arr.length));
 	});
 
+	it('filters array sequentially and asynchronously', function (done) {
+		var arr = [1, 2, 3];
+		var index = 0;
+
+		cps.filterArraySequentialAsync(arr, function (val, i, arr, done) {
+			//check sequentiality
+			expect(val).toEqual(arr[index++]);
+
+			//delay visitor return
+			setTimeout(function () {
+				done(val > 1);
+			}, 100);
+		}, function (result) {
+			//check mapping
+			expect(result).toEqual([2, 3]);
+			done();
+		});
+
+		//check asynchronous
+		expect(index).toEqual(0);
+	});
+
 	it('maps array parallel and asynchronously', function (done) {
 		var arr = [1, 2, 3];
 		var index = 0;
@@ -119,6 +158,27 @@ describe('CPS', function () {
 
 		//check asynchronous
 		expect(immediateResult).toEqual(new Array(arr.length));
+	});
+
+	it('filters array parallel and asynchronously', function (done) {
+		var arr = [1, 2, 3];
+		var index = 0;
+
+		cps.filterArrayParallelAsync(arr, function (val, i, arr, done) {
+
+			//delay visitor return
+			setTimeout(function () {
+				done(val > 1);
+			}, 100);
+		}, function (result) {
+			//check mapping
+			expect(result).toEqual([2, 3]);
+
+			done();
+		});
+
+		//check asynchronous
+		expect(index).toEqual(0);
 	});
 
 	it('visits tree sequentially and synchronously', function () {
@@ -156,6 +216,27 @@ describe('CPS', function () {
 
 		//check result
 		expect(result).toEqual([[2, 4], [[], [6, 8, []], 10], 12]);
+	});
+
+	it('filters tree sequentially and synchronously', function() {
+		var arr = [[1, 2], [[], [3, 4, []], 5], 6];
+		var index = 0;
+		var mult = 1;
+
+		var result = cps.filterTreeSequentialSync(arr, function (val) {
+			//check sequentiality
+			mult *= val;
+			++index;
+
+			return val > 2;
+		});
+
+		//check synchronous
+		expect(index).toEqual(6);
+		expect(mult).toEqual(720);
+
+		//check result
+		expect(result).toEqual([[], [[], [3, 4, []], 5], 6]);
 	});
 
 	it('visits tree sequentially and asynchronously', function (done) {
@@ -226,6 +307,36 @@ describe('CPS', function () {
 		});
 	});
 
+	it('filters tree sequentially and asynchronously', function (done) {
+		var arr = [[1, 2], [[], [3, 4, []], 5], 6];
+		var index = 0;
+		var mult = 1;
+
+		cps.filterTreeSequentialAsync(arr, function (val, i, arr, done) {
+			//check sequentiality
+			mult *= val;
+			++index;
+
+			//delay visitor return
+			setTimeout(function () {
+				done(val > 2);
+			}, 100);
+		}, function (result) {
+			//check asynchronous
+			expect(index).toEqual(6);
+			//check sequentiality
+			expect(mult).toEqual(720);
+			//check result
+			expect(result).toEqual([[], [[], [3, 4, []], 5], 6]);
+
+			done();
+		});
+
+		//check asynchronous
+		expect(index).toEqual(0);
+		expect(mult).toEqual(1);
+	});
+
 	it('maps tree parallel and asynchronously', function (done) {
 		var arr = [[1, 2], [[], [3, 4, []], 5], 6];
 
@@ -250,6 +361,22 @@ describe('CPS', function () {
 		}, function (result) {
 			//check same object
 			expect(result).toBe(immediateResult);
+
+			done();
+		});
+	});
+
+	it('filters tree parallel and asynchronously', function (done) {
+		var arr = [[1, 2], [[], [3, 4, []], 5], 6];
+
+		cps.filterTreeSequentialAsync(arr, function (val, i, arr, done) {
+			//delay visitor return
+			setTimeout(function () {
+				done(val > 2);
+			}, 100);
+		}, function (result) {
+			//check result
+			expect(result).toEqual([[], [[], [3, 4, []], 5], 6]);
 
 			done();
 		});
