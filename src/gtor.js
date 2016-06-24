@@ -20,33 +20,25 @@ function singularIsRejected() {
 	return this.$$status === SingularStatusEnum.REJECTED;
 }
 
-function singularGetProducer() {
-	return {
-		resolve: _.bind(this.resolve, this),
-		reject: _.bind(this.reject, this)
-	};
-}
-
-function singularGetConsumer() {
-	return {
-		'then': _.bind(this.then, this),
-		'catch': _.bind(this.catch, this),
-		'finally': _.bind(this.finally, this)
-	};
-}
-
 var SingularSync = (function () {
 
 	function SingularSync() {
 		this.$$value = initialValue();
 		this.$$status = SingularStatusEnum.PENDING;
+		this.producer = {
+			resolve: _.bind(this.resolve, this),
+			reject: _.bind(this.reject, this)
+		};
+		this.consumer = {
+			'then': _.bind(this.then, this),
+			'catch': _.bind(this.catch, this),
+			'finally': _.bind(this.finally, this)
+		}
 	}
 
 	SingularSync.prototype.isPending = singularIsPending;
 	SingularSync.prototype.isResolved = singularIsResolved;
 	SingularSync.prototype.isRejected = singularIsRejected;
-	SingularSync.prototype.producer = singularGetProducer;
-	SingularSync.prototype.consumer = singularGetConsumer;
 
 	SingularSync.prototype.then = function (resolveHandler, rejectHandler, doneHandler) {
 		var result = new SingularSync();
@@ -79,7 +71,7 @@ var SingularSync = (function () {
 			this.isResolved() ? doneHandler(this.$$value) : doneHandler();
 		}
 
-		return result.consumer();
+		return result.consumer;
 	};
 
 	SingularSync.prototype.catch = function (handler) {
@@ -125,13 +117,20 @@ var SingularAsync = (function () {
 		this.$$value = initialValue();
 		this.$$status = SingularStatusEnum.PENDING;
 		this.$$handlers = [];
+		this.producer = {
+			resolve: _.bind(this.resolve, this),
+			reject: _.bind(this.reject, this)
+		};
+		this.consumer = {
+			'then': _.bind(this.then, this),
+			'catch': _.bind(this.catch, this),
+			'finally': _.bind(this.finally, this)
+		}
 	}
 
 	SingularAsync.prototype.isPending = singularIsPending;
 	SingularAsync.prototype.isResolved = singularIsResolved;
 	SingularAsync.prototype.isRejected = singularIsRejected;
-	SingularAsync.prototype.producer = singularGetProducer;
-	SingularAsync.prototype.consumer = singularGetConsumer;
 
 	SingularAsync.prototype.then = function (resolveHandler, rejectHandler, doneHandler) {
 		var handler = new SAhandler(resolveHandler, rejectHandler, doneHandler);
@@ -141,7 +140,7 @@ var SingularAsync = (function () {
 			this.$$invoke();
 		}
 
-		return handler.sa.consumer();
+		return handler.sa.consumer;
 	};
 
 	SingularAsync.prototype.catch = function (handler) {
@@ -155,7 +154,7 @@ var SingularAsync = (function () {
 			this.$$invoke();
 		}
 
-		return this.consumer();
+		return this.consumer;
 	};
 
 	SingularAsync.prototype.resolve = function (val) {
@@ -169,7 +168,7 @@ var SingularAsync = (function () {
 			}
 		}
 
-		if(!this.isPending()) {
+		if (!this.isPending()) {
 			this.$$invoke();
 		}
 	};
@@ -184,9 +183,9 @@ var SingularAsync = (function () {
 		this.$$invoke();
 	};
 
-	SingularAsync.prototype.$$invoke = function() {
+	SingularAsync.prototype.$$invoke = function () {
 		var self = this;
-		process.nextTick(function() {
+		process.nextTick(function () {
 			var handler, handlerPropName, saFuncName;
 			if (self.isResolved()) {
 				handlerPropName = 'res';
@@ -216,6 +215,72 @@ var SingularAsync = (function () {
 	return SingularAsync;
 }());
 
+
+var Iterator = (function () {
+	"use strict";
+
+	function Iterator(iterable, index) {
+		this.$$iterable = iterable;
+		this.$$index = (arguments.length < 2 || !isFinite(index) || index < 0) ? 0 : index >= iterable.length ? iterable.length : index;
+	}
+
+	Iterator.begin = function (iterable) {
+		return new Iterator(iterable);
+	};
+
+	Iterator.end = function (iterable) {
+		return new Iterator(iterable, iterable.length);
+	};
+
+	Iterator.prototype.diff = function (iterator) {
+		return iterator.$$index - this.$$index;
+	};
+
+	Iterator.prototype.isDone = function () {
+		return this.$$index >= this.$$iterable.length;
+	};
+
+	Iterator.prototype.next = function () {
+		if (this.$$index > this.$$iterable.length) this.$$index = this.$$iterable.length;
+		return (this.$$index < this.$$iterable.length) ? this.$$iterable[this.$$index++] : void 0;
+	};
+
+	Iterator.prototype.map = function (fn) {
+		var self = this;
+		var iter = Object.create(this);
+
+		iter.next = function () {
+			return self.isDone() ? self.next() : fn(self.next(), self.$$index - 1);
+		};
+
+		return iter;
+	};
+
+	Iterator.prototype.filter = function (fn) {
+		var self = this;
+		var iter = Object.create(this);
+
+		iter.next = function () {
+			var value;
+			while (!self.isDone() && !fn(value = self.next(), self.$$index - 1));
+			return value;
+		};
+
+		return iter;
+	};
+
+	Iterator.prototype.reduce = function (fn, initialVal) {
+		var self = this;
+		var lastVal = initialVal;
+		while (!self.isDone()) {
+			lastVal = fn(lastVal, self.next(), self.$$index - 1);
+		}
+		return lastVal;
+	};
+
+	return Iterator;
+}());
+
 function PluralSync() {
 
 }
@@ -226,6 +291,7 @@ function PluralAsync() {
 
 module.exports.SingularSync = SingularSync;
 module.exports.SingularAsync = SingularAsync;
+module.exports.Iterator = Iterator;
 
 function initialValue() {
 	return void 0;
