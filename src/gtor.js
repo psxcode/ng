@@ -219,64 +219,290 @@ var SingularAsync = (function () {
 var Iterator = (function () {
 	"use strict";
 
-	function Iterator(iterable, index) {
-		this.$$iterable = iterable;
-		this.$$index = (arguments.length < 2 || !isFinite(index) || index < 0) ? 0 : index >= iterable.length ? iterable.length : index;
+	function Iteration(key, value, error, done) {
+		this.key = key;
+		this.value = value;
+		this.error = error;
+		this.done = done;
+	}
+
+	Iteration.DONE = new Iteration(void 0, void 0, false, true);
+	Iteration.resolve = function (value, key, done) {
+		return new Iteration(key, value, false, done || false);
+	};
+	Iteration.reject = function (reason, key, done) {
+		return new Iteration(key, reason, true, done || false);
+	};
+
+	function Iterator(iterable, beginIndex, endIndex) {
+		this.iterator = null;
+
+		if (!iterable) {
+			return Iterator.empty;
+		} else if (iterable instanceof Iterator) {
+			return iterable;
+		} else if (!(this instanceof Iterator)) {
+			return new Iterator(iterable, beginIndex, endIndex);
+		} else if (_.isArrayLike(iterable)) {
+			this.iterator = new IndexIterator(iterable, beginIndex, endIndex);
+		} else if (_.isFunction(iterable.next)) {
+			this.iterator = iterable;
+		} else if (_.isObject(iterable)) {
+			this.iterator = new ObjectIterator(iterable);
+		} else {
+			throw new Error('cannot iterate');
+		}
 	}
 
 	Iterator.begin = function (iterable) {
 		return new Iterator(iterable);
 	};
 
-	Iterator.end = function (iterable) {
-		return new Iterator(iterable, iterable.length);
+	Iterator.prototype.next = function (resolveHandler, rejectHandler) {
+		return this.iterator.next(resolveHandler, rejectHandler);
 	};
 
-	Iterator.prototype.diff = function (iterator) {
-		return iterator.$$index - this.$$index;
+	Iterator.prototype.done = function () {
+		return this.iterator.done();
 	};
 
-	Iterator.prototype.isDone = function () {
-		return this.$$index >= this.$$iterable.length;
-	};
-
-	Iterator.prototype.next = function () {
-		if (this.$$index > this.$$iterable.length) this.$$index = this.$$iterable.length;
-		return (this.$$index < this.$$iterable.length) ? this.$$iterable[this.$$index++] : void 0;
+	Iterator.prototype.pos = function () {
+		return this.iterator.pos();
 	};
 
 	Iterator.prototype.map = function (fn) {
-		var self = this;
-		var iter = Object.create(this);
-
-		iter.next = function () {
-			return self.isDone() ? self.next() : fn(self.next(), self.$$index - 1);
-		};
-
-		return iter;
+		return new MapIterator(this, fn);
 	};
 
 	Iterator.prototype.filter = function (fn) {
-		var self = this;
-		var iter = Object.create(this);
-
-		iter.next = function () {
-			var value;
-			while (!self.isDone() && !fn(value = self.next(), self.$$index - 1));
-			return value;
-		};
-
-		return iter;
+		return new FilterIterator(this, fn);
 	};
 
 	Iterator.prototype.reduce = function (fn, initialVal) {
-		var self = this;
-		var lastVal = initialVal;
-		while (!self.isDone()) {
-			lastVal = fn(lastVal, self.next(), self.$$index - 1);
-		}
-		return lastVal;
+		return new ReduceIterator(this, fn, initialVal);
 	};
+
+	var EmptyIterator = (function () {
+		function EmptyIterator() {
+
+		}
+
+		EmptyIterator.prototype.next = function () {
+			return Iteration.DONE;
+		};
+
+		return EmptyIterator;
+	}());
+
+	var MapIterator = (function () {
+
+		function MapIterator(iterator, visitor) {
+			this.iterator = iterator;
+			this.visitor = visitor;
+		}
+
+		MapIterator.prototype = Object.create(Iterator.prototype);
+		MapIterator.prototype.constructor = MapIterator;
+
+		MapIterator.prototype.next = function (resolveHandler, rejectHandler) {
+			var iteration = this.iterator.next();
+
+			//done case
+			if (iteration.done) {
+				return iteration;
+			}
+
+			//error case
+			if (iteration.error) {
+				if (_.isFunction(rejectHandler)) {
+					try {
+						return Iteration.resolve(rejectHandler(iteration.value, iteration.key), iteration.key);
+					} catch (e) {
+						return Iteration.reject(e, iteration.key);
+					}
+				} else {
+					return iteration;
+				}
+			}
+
+			if (_.isFunction(resolveHandler)) {
+				try {
+					return Iteration.resolve(resolveHandler(this.visitor(iteration.value, iteration.key), iteration.key));
+				} catch (e) {
+					return Iteration.reject(e, iteration.key);
+				}
+			} else {
+				return Iteration.resolve(this.visitor(iteration.value, iteration.key), iteration.key);
+			}
+		};
+
+		return MapIterator;
+	}());
+
+	var FilterIterator = (function () {
+
+			function FilterIterator(iterator, visitor) {
+				this.iterator = iterator;
+				this.visitor = visitor;
+			}
+
+			FilterIterator.prototype = Object.create(Iterator.prototype);
+			FilterIterator.prototype.constructor = FilterIterator;
+
+			FilterIterator.prototype.next = function (resolveHandler, rejectHandler) {
+				while (true) {
+
+					var iteration = this.iterator.next();
+
+					//done case
+					if (iteration.done) {
+						return iteration;
+					}
+
+					//error case
+					if (iteration.error) {
+						if (_.isFunction(rejectHandler)) {
+							try {
+								return Iteration.resolve(rejectHandler(iteration.value), iteration.key);
+							} catch (e) {
+								return Iteration.reject(e, iteration.key);
+							}
+						} else {
+							return iteration;
+						}
+					}
+
+					try {
+						if (this.visitor(iteration.value, iteration.key)) {
+							if (_.isFunction(resolveHandler)) {
+								return Iteration.resolve(resolveHandler(iteration.value), iteration.key);
+							} else {
+								return Iteration.resolve(iteration.value, iteration.key);
+							}
+						}
+					}
+					catch (e) {
+						return Iteration.reject(e, iteration.key);
+					}
+				}
+			};
+
+			return FilterIterator;
+		}()
+	);
+
+	var ReduceIterator = (function () {
+
+		function ReduceIterator(iterator, visitor, initialValue) {
+			this.iterator = iterator;
+			this.visitor = visitor;
+			this.lastValue = initialValue;
+		}
+
+		ReduceIterator.prototype = Object.create(Iterator.prototype);
+		ReduceIterator.prototype.constructor = ReduceIterator;
+
+		ReduceIterator.prototype.next = function (resolveHandler, rejectHandler) {
+
+			var iterations = [];
+			var iteration = this.iterator.next();
+			while (!iteration.done) {
+				iterations.push(iteration);
+				iteration = this.iterator.next();
+			}
+
+			for (var i = 0; i < iterations.length; ++i) {
+				iteration = iterations[i];
+				if (iteration.error) {
+					if (_.isFunction(rejectHandler)) {
+						try {
+							this.lastValue = this.visitor(this.lastValue, rejectHandler(iteration.value, iteration.key), iteration.key);
+						} catch (e) {
+							return Iteration.reject(e, iteration.key, true);
+						}
+					} else {
+						return iteration;
+					}
+				} else {
+					try {
+						this.lastValue = this.visitor(this.lastValue, iteration.value, iteration.key);
+					} catch (e) {
+						return Iteration.reject(e, iteration.key, true);
+					}
+				}
+			}
+
+			if (_.isFunction(resolveHandler)) {
+				try {
+					this.lastValue = resolveHandler(this.lastValue);
+				} catch (e) {
+					return Iteration.reject(e, void 0, true);
+				}
+			}
+
+			return Iteration.resolve(this.lastValue, void 0, true);
+		};
+
+		return ReduceIterator;
+	}());
+
+	var IndexIterator = (function () {
+
+		function IndexIterator(iterable, beginIndex, endIndex) {
+			this.iterable = iterable;
+			this.index = beginIndex || 0;
+			this.end = endIndex || iterable.length;
+		}
+
+		IndexIterator.prototype.next = function (resolveHandler) {
+			if (this.index >= this.end) {
+				return Iteration.DONE;
+			}
+
+			var result;
+			if (_.isFunction(resolveHandler)) {
+				try {
+					result = Iteration.resolve(resolveHandler(this.iterable[this.index]), this.index);
+				} catch (e) {
+					result = Iteration.reject(e, this.index);
+				}
+			} else {
+				result = Iteration.resolve(this.iterable[this.index], this.index);
+			}
+
+			++this.index;
+			return result;
+		};
+
+		return IndexIterator;
+	}());
+
+	var ObjectIterator = (function () {
+
+		function ObjectIterator(object) {
+			this.iterable = object;
+			this.iterator = new IndexIterator(Object.keys(object));
+		}
+
+		ObjectIterator.prototype.next = function (resolveHandler) {
+			var iteration = this.iterator.next();
+			if (iteration.done) {
+				return iteration;
+			}
+
+			if (_.isFunction(resolveHandler)) {
+				try {
+					return Iteration.resolve(resolveHandler(this.iterable[iteration.value]), iteration.value);
+				} catch (e) {
+					return Iteration.reject(e, iteration.value);
+				}
+			} else {
+				return Iteration.resolve(this.iterable[iteration.value], iteration.value);
+			}
+		};
+
+		return ObjectIterator;
+	}());
 
 	return Iterator;
 }());
