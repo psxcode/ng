@@ -383,4 +383,103 @@ describe('GTOR Singular Async', function () {
 
 		sa.resolve(21);
 	});
+
+	it('waits for \'all\' values to complete', function (done) {
+		var spy = jasmine.createSpy('spy');
+
+		var resolves = [1, 2, 3];
+
+		var sas = Array.apply(null, new Array(resolves.length)).map(function () {
+			return new SA();
+		});
+
+		var sa = SA.all(sas).then(function (results) {
+			for(var i = 0; i < results.length; ++i) {
+				expect(results[i]).toEqual(resolves[i]);
+			}
+		});
+
+		for(var i = 0; i < sas.length; ++i) {
+			sas[i].resolve(resolves[i]);
+		}
+
+		setTimeout(done, 200);
+	});
+
+	it('rejects \'all\' values if one is rejected', function (done) {
+		var spy = jasmine.createSpy('spy');
+		var errSpy = jasmine.createSpy('errSpy');
+
+		var resolves = [1, 2, 3];
+
+		var sas = Array.apply(null, new Array(resolves.length)).map(function () {
+			return new SA();
+		});
+
+		var sa = SA.all(sas).then(spy, errSpy);
+
+		sas[0].resolve(1);
+		sas[1].reject('err');
+		sas[2].resolve(3);
+
+		setTimeout(function() {
+			expect(spy).not.toHaveBeenCalled();
+			expect(errSpy).toHaveBeenCalled();
+			done();
+		});
+	});
+
+	it('waits for \'any\' values to complete', function(done) {
+		var spy = jasmine.createSpy('spy');
+		var errSpy = jasmine.createSpy('errSpy');
+
+		var resolves = [1, 2, 3];
+
+		var sas = Array.apply(null, new Array(resolves.length)).map(function () {
+			return new SA();
+		});
+
+		var sa = SA.any(sas).then(spy, errSpy);
+
+		sas[0].resolve(1);
+		sas[1].reject('err');
+		sas[2].resolve(3);
+
+		setTimeout(function() {
+			expect(spy).toHaveBeenCalledWith([1, undefined, 3]);
+			expect(errSpy).not.toHaveBeenCalled();
+			done();
+		}, 200);
+	});
+
+	it('allows to \'race\' values', function(done) {
+		var spy = jasmine.createSpy('spy');
+		var errSpy = jasmine.createSpy('errSpy');
+
+		var resolves = [1, 2, 3];
+
+		var sas = Array.apply(null, new Array(resolves.length)).map(function () {
+			return new SA();
+		});
+
+		var sa = SA.race(sas).then(spy, errSpy);
+
+		setTimeout(function() {
+			sas[0].resolve(1);
+		}, 300);
+
+		setTimeout(function() {
+			sas[1].resolve(2);
+		}, 100);
+
+		setTimeout(function() {
+			sas[2].resolve(3);
+		}, 200);
+
+		setTimeout(function() {
+			expect(spy).toHaveBeenCalledWith(2);
+			expect(errSpy).not.toHaveBeenCalled();
+			done();
+		}, 500);
+	});
 });
