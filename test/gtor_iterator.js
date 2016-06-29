@@ -35,6 +35,14 @@ describe('GTOR Iterator', function () {
 		expect(it.next().value).toEqual(2);
 	});
 
+	it('can stop at any index', function () {
+		var arr = [1, 2, 3];
+		var it = new Iterator(arr, 1, 2);
+
+		it.next();
+		expect(it.next().done).toEqual(true);
+	});
+
 	it('provides \'begin\' property', function () {
 		var arr = [1, 2, 3];
 		var it = Iterator.begin(arr);
@@ -162,10 +170,10 @@ describe('GTOR Iterator', function () {
 	it('allows \'reduce\' iterator', function () {
 		var arr = [1, 2, 3];
 		var it = Iterator.begin(arr)
-			.reduce(function (acc, val, index) {
+			.reduce(0, function (acc, val, index) {
 				expect(val).toEqual(arr[index]);
 				return acc + val;
-			}, 0);
+			});
 
 		expect(it.next().value).toEqual(6);
 	});
@@ -179,10 +187,92 @@ describe('GTOR Iterator', function () {
 			.filter(function (val) {
 				return val > 4;
 			})
-			.reduce(function (acc, val, index) {
+			.reduce(0, function (acc, val, index) {
 				return acc + val;
-			}, 0);
+			});
 
 		expect(it.next().value).toEqual(14);
+	});
+
+	it('allows \'map\' handler to catch errors thrown in uplevel handlers', function () {
+		var spy = jasmine.createSpy('spy');
+		var errSpy = jasmine.createSpy('errSpy');
+
+		var arr = [1, 2, 3, 4];
+		var it = Iterator.begin(arr)
+			.map(function (val) {
+				throw new Error('');
+			})
+			.map(spy, errSpy);
+
+		while(!it.next().done);
+
+		expect(spy).not.toHaveBeenCalled();
+		expect(errSpy).toHaveBeenCalledTimes(arr.length);
+	});
+
+	it('allows \'filter\' handler to catch errors thrown in uplevel handlers', function () {
+		var spy = jasmine.createSpy('spy');
+		var errSpy = jasmine.createSpy('errSpy');
+
+		var arr = [1, 2, 3, 4];
+		var it = Iterator.begin(arr)
+			.map(function (val) {
+				throw new Error('');
+			})
+			.filter(spy, errSpy);
+
+		while(!it.next().done);
+
+		expect(spy).not.toHaveBeenCalled();
+		expect(errSpy).toHaveBeenCalledTimes(arr.length);
+	});
+
+	it('allows \'reduce\' handler to catch errors thrown in uplevel handlers', function () {
+		var spy = jasmine.createSpy('spy');
+		var errSpy = jasmine.createSpy('errSpy');
+
+		var arr = [1, 2, 3, 4];
+		var it = Iterator.begin(arr)
+			.map(function (val) {
+				throw new Error('');
+			})
+			.reduce(0, spy, errSpy);
+
+		while(!it.next().done);
+
+		expect(spy).not.toHaveBeenCalled();
+		expect(errSpy).toHaveBeenCalledTimes(arr.length);
+	});
+
+	it('allows \'catch\' to handle errors thrown in uplevel handlers', function () {
+		var errSpy = jasmine.createSpy('errSpy');
+
+		var arr = [1, 2, 3, 4];
+		var it = Iterator.begin(arr)
+			.map(function (val) {
+				throw new Error('');
+			})
+			.catch(errSpy);
+
+		while(!it.next().done);
+
+		expect(errSpy).toHaveBeenCalledTimes(arr.length);
+	});
+
+	it('allows \'catch\' to resolve values', function () {
+		var arr = [1, 2, 3, 4];
+		var it = Iterator.begin(arr)
+			.map(function (val) {
+				throw new Error('');
+			})
+			.catch(function(e, index) {
+				return arr[index];
+			})
+			.reduce(0, function(acc, val) {
+				return acc + val;
+			});
+
+		expect(it.next().value).toEqual(10);
 	});
 });
