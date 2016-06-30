@@ -15,11 +15,11 @@ describe('GTOR Iterator', function () {
 
 	it('should iterate over array', function () {
 		var arr = [1, 2, 3];
-		var it = Iterator(arr);
 
-		for (var i = 0; i < arr.length; ++i) {
-			expect(it.next().value).toEqual(arr[i]);
-		}
+		var it = Iterator(arr);
+		expect(it.next().value).toEqual(1);
+		expect(it.next().value).toEqual(2);
+		expect(it.next().value).toEqual(3);
 	});
 
 	it('should iterate over array-like-object', function () {
@@ -30,10 +30,21 @@ describe('GTOR Iterator', function () {
 			'2': 3
 		};
 		var it = Iterator(arr);
+		expect(it.next().value).toEqual(1);
+		expect(it.next().value).toEqual(2);
+		expect(it.next().value).toEqual(3);
+	});
 
-		for (var i = 0; i < arr.length; ++i) {
-			expect(it.next().value).toEqual(arr[i]);
-		}
+	it('should iterate over object', function () {
+		var arr = {
+			'a': 1,
+			'b': 2,
+			'c': 3
+		};
+		var it = Iterator(arr);
+		expect(it.next().value).toEqual(1);
+		expect(it.next().value).toEqual(2);
+		expect(it.next().value).toEqual(3);
 	});
 
 	it('should iterate over any object with \'next\' function', function () {
@@ -48,14 +59,13 @@ describe('GTOR Iterator', function () {
 		expect(it.next().value).toEqual(42);
 	});
 
-	it('should iterate over any function. Function should return Iteration object', function () {
-		function generator() {
-			return Iterator.Iteration.resolve(42, 0, true);
-		}
+	it('should iterate over any function', function () {
+		function gen() { return 42; }
 
-		var it = Iterator(generator);
+		var it = Iterator(gen);
 
 		expect(it.next().value).toEqual(42);
+		expect(it.next().done).toEqual(true);
 	});
 
 	it('can start from any index', function () {
@@ -245,14 +255,26 @@ describe('GTOR Iterator', function () {
 		expect(iteration.value).toEqual(0);
 	});
 	
-	it('allows to \'flatten\' iterators', function() {
-		var arr = [1, [2, 3], 4, [5, [6]]];
+	it('allows to \'flatten\' arrays', function() {
+		var arr = [1, [2, 3, []], 4, [5, [6]]];
 		var iteration = Iterator(arr)
 			.flatten()
 			.reduce(accumulate, 0)
 			.next();
 
-		expect(iteration.value).toEqual(0);
+		expect(iteration.value).toEqual(21);
+	});
+
+	it('allows to \'flatten\' any iterables', function() {
+		var arr = [gen, {next: Iterator.func(gen)}, [3, {v1: 4, v2: gen}, [Iterator([2, 3])]], {}, 4, [5, [6]]];
+		var iteration = Iterator(arr)
+			.flatten()
+			.reduce(accumulate, 0)
+			.next();
+
+		expect(iteration.value).toEqual(42);
+
+		function gen() {return 5;}
 	});
 
 	it('allows to chain \'map\', \'filter\' and \'reduce\'', function () {
@@ -264,9 +286,7 @@ describe('GTOR Iterator', function () {
 			.filter(function (val) {
 				return val > 4;
 			})
-			.reduce(function (acc, val) {
-				return acc + val;
-			}, 0)
+			.reduce(accumulate, 0)
 			.next();
 
 		expect(iteration.value).toEqual(14);
@@ -322,9 +342,7 @@ describe('GTOR Iterator', function () {
 			.catch(function (e, index) {
 				return arr[index];
 			})
-			.reduce(function (acc, val) {
-				return acc + val;
-			}, 0)
+			.reduce(accumulate, 0)
 			.next();
 
 		expect(iteration.value).toEqual(10);
