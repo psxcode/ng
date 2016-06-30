@@ -277,6 +277,27 @@ describe('GTOR Iterator', function () {
 		function gen() {return 5;}
 	});
 
+	it('allows to \'cycle\' any iterators', function() {
+		var arr = [1, 2, 3];
+		var iteration = Iterator(arr)
+			.cycle(3)
+			.reduce(accumulate, 0)
+			.next();
+
+		expect(iteration.value).toEqual(18);
+	});
+
+	it('allows to chain \'cycle\' iterators', function() {
+		var arr = [1, 2, 3];
+		var iteration = Iterator(arr)
+			.cycle(3)
+			.cycle(3)
+			.reduce(accumulate, 0)
+			.next();
+
+		expect(iteration.value).toEqual(54);
+	});
+
 	it('allows to chain \'map\', \'filter\' and \'reduce\'', function () {
 		var arr = [1, 2, 3, 4];
 		var iteration = Iterator(arr)
@@ -353,7 +374,6 @@ describe('GTOR Iterator', function () {
 		var iteration = Iterator(arr)
 			.map(throwFunc)
 			.catch()
-			.reduce()
 			.next();
 
 		expect(iteration.value).toBeUndefined();
@@ -367,9 +387,15 @@ describe('GTOR Iterator', function () {
 			.map(throwFunc)
 			.map(spy)
 			.catch()
-			.reduce()
 			.next();
 
 		expect(spy).not.toHaveBeenCalled();
+	});
+
+	it('allows to convert iterator to Array', function() {
+		var arr = [1, 2, 3, 4];
+		var result = Iterator(arr).toArray();
+
+		expect(result).toEqual([1, 2, 3, 4]);
 	});
 });
