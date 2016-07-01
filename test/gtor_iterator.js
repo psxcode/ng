@@ -1,7 +1,7 @@
 "use strict";
 
 var gtor = require('../src/gtor');
-var Iterator = gtor.Iterator;
+var Iterator = gtor.IteratorSync;
 
 describe('GTOR Iterator', function () {
 
@@ -14,12 +14,16 @@ describe('GTOR Iterator', function () {
 	}
 
 	it('should iterate over array', function () {
-		var arr = [1, 2, 3];
+		var it = Iterator([1, 2, 3]);
+		var testIndex = 1;
 
-		var it = Iterator(arr);
-		expect(it.next().value).toEqual(1);
-		expect(it.next().value).toEqual(2);
-		expect(it.next().value).toEqual(3);
+		it.next(test);
+		it.next(test);
+		it.next(test);
+
+		function test(val) {
+			expect(val).toEqual(testIndex++);
+		}
 	});
 
 	it('should iterate over array-like-object', function () {
@@ -49,9 +53,7 @@ describe('GTOR Iterator', function () {
 
 	it('should iterate over any object with \'next\' function', function () {
 		var iterable = {
-			next: function () {
-				return Iterator.Iteration.resolve(42, 0, true);
-			}
+			next: Iterator.func(function () {return 42})
 		};
 
 		var it = Iterator(iterable);
@@ -254,8 +256,8 @@ describe('GTOR Iterator', function () {
 
 		expect(iteration.value).toEqual(0);
 	});
-	
-	it('allows to \'flatten\' arrays', function() {
+
+	it('allows to \'flatten\' arrays', function () {
 		var arr = [1, [2, 3, []], 4, [5, [6]]];
 		var iteration = Iterator(arr)
 			.flatten()
@@ -265,7 +267,7 @@ describe('GTOR Iterator', function () {
 		expect(iteration.value).toEqual(21);
 	});
 
-	it('allows to \'flatten\' any iterables', function() {
+	it('allows to \'flatten\' any iterables', function () {
 		var arr = [gen, {next: Iterator.func(gen)}, [3, {v1: 4, v2: gen}, [Iterator([2, 3])]], {}, 4, [5, [6]]];
 		var iteration = Iterator(arr)
 			.flatten()
@@ -277,7 +279,7 @@ describe('GTOR Iterator', function () {
 		function gen() {return 5;}
 	});
 
-	it('allows to \'cycle\' any iterators', function() {
+	it('allows to \'cycle\' any iterators', function () {
 		var arr = [1, 2, 3];
 		var iteration = Iterator(arr)
 			.cycle(3)
@@ -287,7 +289,7 @@ describe('GTOR Iterator', function () {
 		expect(iteration.value).toEqual(18);
 	});
 
-	it('allows to chain \'cycle\' iterators', function() {
+	it('allows to chain \'cycle\' iterators', function () {
 		var arr = [1, 2, 3];
 		var iteration = Iterator(arr)
 			.cycle(3)
@@ -381,7 +383,7 @@ describe('GTOR Iterator', function () {
 
 	it('errors propagate without invoking resolvers in chain', function () {
 		var spy = jasmine.createSpy('spy');
-		
+
 		var arr = [1, 2, 3, 4];
 		var iteration = Iterator(arr)
 			.map(throwFunc)
@@ -392,7 +394,7 @@ describe('GTOR Iterator', function () {
 		expect(spy).not.toHaveBeenCalled();
 	});
 
-	it('allows to convert iterator to Array', function() {
+	it('allows to convert iterator to Array', function () {
 		var arr = [1, 2, 3, 4];
 		var result = Iterator(arr).toArray();
 
