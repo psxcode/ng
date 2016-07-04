@@ -308,8 +308,6 @@ var IterationSync = (function () {
 		this.done = done;
 	}
 
-	IterationSync.DONE = IterationSync.resolve(void 0, true);
-
 	IterationSync.resolve = function (value, done) {
 		return new IterationSync(SingularSync.resolve(value), done === true);
 	};
@@ -317,6 +315,8 @@ var IterationSync = (function () {
 	IterationSync.reject = function (reason, done) {
 		return new IterationSync(SingularSync.reject(reason), done === true);
 	};
+
+	IterationSync.DONE = IterationSync.resolve(void 0, true);
 
 	return IterationSync;
 }());
@@ -330,7 +330,7 @@ var IteratorSync = (function () {
 		EmptyIteratorSync.prototype = Object.create(IteratorSync.prototype);
 		EmptyIteratorSync.prototype.constructor = EmptyIteratorSync;
 
-		EmptyIteratorSync.prototype.next = function () {
+		EmptyIteratorSync.prototype.$next = function () {
 			return IterationSync.DONE;
 		};
 
@@ -385,7 +385,17 @@ var IteratorSync = (function () {
 
 		IteratorSync.empty = IteratorSync();
 
-		IteratorSync.prototype.next = function (resolveHandler) {
+		IteratorSync.prototype.next = function (valueHandler) {
+			this.$next(function (iteration) {
+				if (iteration.done) {
+					valueHandler(void 0);
+				} else {
+					iteration.value.then(valueHandler);
+				}
+			});
+		};
+
+		IteratorSync.prototype.$next = function (resolveHandler) {
 			this.impl.next(resolveHandler);
 		};
 
@@ -437,10 +447,11 @@ var IteratorSync = (function () {
 		MapIterator.prototype = Object.create(IteratorSync.prototype);
 		MapIterator.prototype.constructor = MapIterator;
 
-		MapIterator.prototype.next = function (iterationHandler) {
-			this.iterator.next(function nextHandler(iteration) {
+		MapIterator.prototype.$next = function (iterationHandler) {
+			var self = this;
+			this.iterator.$next(function (iteration) {
 				if (!iteration.done) {
-					iteration.value = iteration.value.then(this.resolveHandler, this.rejectHandler);
+					iteration.value = iteration.value.then(self.resolveHandler, self.rejectHandler);
 				}
 				iterationHandler(iteration);
 			});
@@ -460,9 +471,9 @@ var IteratorSync = (function () {
 		FilterIterator.prototype = Object.create(IteratorSync.prototype);
 		FilterIterator.prototype.constructor = FilterIterator;
 
-		FilterIterator.prototype.next = function (iterationHandler) {
+		FilterIterator.prototype.$next = function (iterationHandler) {
 			var self = this;
-			this.iterator.next(function (iteration) {
+			this.iterator.$next(function nextHandler(iteration) {
 				if (iteration.done) {
 					iterationHandler(iteration);
 				}
@@ -470,7 +481,7 @@ var IteratorSync = (function () {
 				iteration.value
 					.then(self.resolveHandler, self.rejectHandler)
 					.then(function (isApproved) {
-						if (isApproved) iterationHandler(iteration);
+						isApproved ? iterationHandler(iteration) : self.iterator.$next(nextHandler);
 					});
 			});
 		};
@@ -489,12 +500,10 @@ var IteratorSync = (function () {
 		ReduceIterator.prototype = Object.create(IteratorSync.prototype);
 		ReduceIterator.prototype.constructor = ReduceIterator;
 
-		ReduceIterator.prototype.next = function (iterationHandler) {
+		ReduceIterator.prototype.$next = function (iterationHandler) {
 			var self = this;
 
-			this.iterator.next(nextHandler);
-
-			function nextHandler(iteration) {
+			this.iterator.$next(function nextHandler(iteration) {
 				if (iteration.done) {
 					iterationHandler(IteratorSync.resolve(self.lastValue));
 				}
@@ -507,12 +516,13 @@ var IteratorSync = (function () {
 							iterationHandler(IteratorSync.reject(e));
 						}
 					}).then(function () {
-						self.iterator.next(nextHandler);
+						self.iterator.n$ext(nextHandler);
 					})
 				} else {
-					self.iterator.next(nextHandler);
+					//dry run iterator
+					self.iterator.$next(nextHandler);
 				}
-			}
+			});
 		};
 
 		return ReduceIterator;
@@ -527,22 +537,23 @@ var IteratorSync = (function () {
 		FlattenIterator.prototype = Object.create(IteratorSync.prototype);
 		FlattenIterator.prototype.constructor = FlattenIterator;
 
-		FlattenIterator.prototype.next = function (iterationHandler) {
+		FlattenIterator.prototype.$next = function (iterationHandler) {
 			var self = this;
 
-			this.iteratorStack[0].next(nextHandler);
-
-			function nextHandler(iteration) {
+			this.iteratorStack[0].$next(function nextHandler(iteration) {
 				if (iteration.done) {
 					self.iteratorStack.shift();
-					self.iteratorStack.length ? self.iteratorStack[0].next(nextHandler) : iterationHandler(iteration);
+					self.iteratorStack.length ? self.iteratorStack[0].$next(nextHandler) : iterationHandler(iteration);
 				} else {
-					iteration.value.then(IteratorSync.can).then();
-					if (IteratorSync.can(iteration.value)) {
-						self.iteratorStack.unshift(IteratorSync(iteration.value));
-					}
+					iteration.value.then(function (val) {
+						if (IteratorSync.can(val)) {
+							self.iteratorStack.unshift(IteratorSync(val));
+						} else {
+							iterationHandler(iteration);
+						}
+					});
 				}
-			}
+			});
 		};
 
 		return FlattenIterator;
@@ -551,7 +562,7 @@ var IteratorSync = (function () {
 	var CycleIterator = (function () {
 		function CycleIterator(iterator, numCycles) {
 			this.source = iterator;
-			this.index = 0;
+			this.cycleIndex = 0;
 			this.count = isFinite(numCycles) ? _.max([1, numCycles]) : 1;
 			this.iterations = null;
 			this.iterIndex = 0;
@@ -560,29 +571,41 @@ var IteratorSync = (function () {
 		CycleIterator.prototype = Object.create(IteratorSync.prototype);
 		CycleIterator.prototype.constructor = CycleIterator;
 
-		CycleIterator.prototype.next = function () {
-			//accumulate
+		CycleIterator.prototype.$next = function (iterationHandler) {
+			var self = this;
+
 			if (!this.iterations) {
+				//accumulate
 				this.iterations = [];
-				while (true) {
-					var iteration = this.source.next();
-					if (iteration.done) break;
-					this.iterations.push(iteration);
-				}
+
+				this.source.$next(function nextHandler(iteration) {
+					if (!iteration.done) {
+						self.iterations.push(iteration);
+						self.source.$next(nextHandler);
+					} else {
+						iterationHandler(getNextIteration(self));
+					}
+				});
+
+			} else {
+				//iterate
+				iterationHandler(getNextIteration(this));
 			}
 
-			//iterate
-			if (this.iterIndex < this.iterations.length) {
-				return this.iterations[this.iterIndex++];
+		};
+
+		function getNextIteration(self) {
+			if (self.iterIndex < self.iterations.length) {
+				return self.iterations[self.iterIndex++];
 			} else {
-				if (++this.index < this.count) {
-					this.iterIndex = 0;
-					return this.next();
+				if (++self.cycleIndex < self.count) {
+					self.iterIndex = 0;
+					return getNextIteration(self);
 				} else {
-					return Iteration.DONE;
+					return IterationSync.DONE;
 				}
 			}
-		};
+		}
 
 		return CycleIterator;
 	}());
@@ -597,27 +620,16 @@ var IteratorSync = (function () {
 		CatchIterator.prototype = Object.create(IteratorSync.prototype);
 		CatchIterator.prototype.constructor = CatchIterator;
 
-		CatchIterator.prototype.next = function () {
-			var iteration = this.iterator.next();
-
-			if (iteration.done) {
-				return iteration;
-			}
-
-			if (iteration.error) {
-				if (_.isFunction(this.handler)) {
-					try {
-						return Iteration.resolve(this.handler(iteration.value, iteration.key), iteration.key);
-					} catch (e) {
-						return Iteration.reject(e, iteration.key);
-					}
-				} else {
-					//resolve with undefined
-					return Iteration.resolve(void 0, iteration.key);
+		CatchIterator.prototype.$next = function (iterationHandler) {
+			var self = this;
+			this.iterator.$next(function (iteration) {
+				if (!iteration.done) {
+					iteration.value = iteration.value.catch(function (e) {
+						return _.isFunction(self.handler) ? self.handler(e) : void 0;
+					});
 				}
-			}
-
-			return iteration;
+				iterationHandler(iteration);
+			});
 		};
 
 		return CatchIterator;
@@ -639,8 +651,8 @@ var IteratorSync = (function () {
 
 		function IndexIteratorImpl(iterable, beginIndex, endIndex) {
 			this.iterable = iterable;
-			this.end = isFinite(endIndex) ? _.min([iterable.length, _.max([endIndex, 0])]) : iterable.length;
-			this.index = isFinite(beginIndex) ? _.max([0, _.min([beginIndex, iterable.length, this.end])]) : 0;
+			this.end = isFinite(endIndex) ? _.min([iterable.length, endIndex < 0 ? _.max([0, iterable.length + endIndex]) : endIndex]) : iterable.length;
+			this.index = isFinite(beginIndex) ? _.min([this.end, beginIndex < 0 ? _.max([0, iterable.length + beginIndex]) : beginIndex]) : 0;
 		}
 
 		IndexIteratorImpl.prototype = Object.create(IteratorImpl.prototype);
@@ -764,9 +776,9 @@ function PluralAsync() {
 
 }
 
-module.exports.SingularSync = SingularSync;
-module.exports.SingularAsync = SingularAsync;
-module.exports.IteratorSync = IteratorSync;
+exports.SingularSync = SingularSync;
+exports.SingularAsync = SingularAsync;
+exports.IteratorSync = IteratorSync;
 
 function initialValue() {
 	return void 0;
