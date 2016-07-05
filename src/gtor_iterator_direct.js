@@ -292,38 +292,44 @@ var FlattenIterator = (function () {
 
 var CycleIterator = (function () {
 	function CycleIterator(iterator, numCycles) {
-		this.source = iterator;
-		this.index = 0;
-		this.count = isFinite(numCycles) ? _.max([1, numCycles]) : 1;
-		this.iterations = null;
+		this.iterator = iterator;
+		this.cycleIndex = 0;
+		//base on zero iterations count, they are additional iterations
+		this.count = isFinite(numCycles) ? _.max([0, numCycles - 1]) : 0;
+		this.iterations = [];
 		this.iterIndex = 0;
+		this.done = false;
 	}
 
 	CycleIterator.prototype = Object.create(Iterator.prototype);
 	CycleIterator.prototype.constructor = CycleIterator;
 
 	CycleIterator.prototype.next = function () {
-		//accumulate
-		if (!this.iterations) {
-			this.iterations = [];
-			while (true) {
-				var iteration = this.source.next();
-				if (iteration.done) break;
+		var iteration = this.iterator.next();
+		if (iteration.done) {
+			//check if iterations are cleared
+			if (this.iterations) {
+				if (this.iterIndex >= this.iterations.length) {
+					if (++this.cycleIndex >= this.count) {
+						//done
+						//clear iterations
+						this.iterations = null;
+					} else {
+						this.iterIndex = 0;
+						return this.next();
+					}
+				} else {
+					iteration = this.iterations[this.iterIndex++];
+				}
+			}
+		} else {
+			//check if iterations are cleared
+			if (this.iterations) {
 				this.iterations.push(iteration);
 			}
 		}
 
-		//iterate
-		if (this.iterIndex < this.iterations.length) {
-			return this.iterations[this.iterIndex++];
-		} else {
-			if (++this.index < this.count) {
-				this.iterIndex = 0;
-				return this.next();
-			} else {
-				return Iteration.DONE;
-			}
-		}
+		return iteration;
 	};
 
 	return CycleIterator;

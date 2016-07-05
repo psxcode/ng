@@ -256,10 +256,11 @@ var Iterator = (function () {
 
 	var CycleIterator = (function () {
 		function CycleIterator(iterator, numCycles) {
-			this.source = iterator;
+			this.iterator = iterator;
 			this.cycleIndex = 0;
-			this.count = isFinite(numCycles) ? _.max([1, numCycles]) : 1;
-			this.iterations = null;
+			//base on zero iterations count, they are additional iterations
+			this.count = isFinite(numCycles) ? _.max([0, numCycles - 1]) : 0;
+			this.iterations = [];
 			this.iterIndex = 0;
 		}
 
@@ -269,24 +270,30 @@ var Iterator = (function () {
 		CycleIterator.prototype.$next = function (iterationHandler) {
 			var self = this;
 
-			if (!this.iterations) {
-				//accumulate
-				this.iterations = [];
-
-				this.source.$next(function nextHandler(iteration) {
-					if (!iteration.done) {
-						self.iterations.push(iteration);
-						self.source.$next(nextHandler);
-					} else {
-						iterationHandler(getNextIteration(self));
+			this.iterator.$next(function nextHandler(iteration) {
+				if (iteration.done) {
+					if (self.iterations) {
+						if (self.iterIndex >= self.iterations.length) {
+							if (++self.cycleIndex >= self.count) {
+								//done
+								//clear iterations
+								self.iterations = null;
+							} else {
+								self.iterIndex = 0;
+								self.$next(iterationHandler);
+								return;
+							}
+						} else {
+							iteration = self.iterations[self.iterIndex++];
+						}
 					}
-				});
-
-			} else {
-				//iterate
-				iterationHandler(getNextIteration(this));
-			}
-
+				} else {
+					if (self.iterations) {
+						self.iterations.push(iteration);
+					}
+				}
+				iterationHandler(iteration);
+			});
 		};
 
 		function getNextIteration(self) {
