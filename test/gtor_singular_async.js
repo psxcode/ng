@@ -1,7 +1,6 @@
 "use strict";
 
-var gtor = require('../src/gtor');
-var SA = gtor.SingularAsync;
+var SA = require('../src/gtor_singular_async');
 
 describe('GTOR Singular Async', function () {
 

@@ -2,8 +2,7 @@
 
 var why = require('why-is-node-running');
 
-var gtor = require('../src/gtor');
-var SS = gtor.SingularSync;
+var SS = require('../src/gtor_singular_sync');
 
 describe('GTOR Singular Sync', function () {
 
