@@ -20,6 +20,12 @@ gulp.task('test_gtor_iterator_cps', function () {
 		.pipe(jasmine());
 });
 
+gulp.task('test_gtor_iterator_direct', function () {
+	return gulp
+		.src('./test/gtor_iterator_direct.js')
+		.pipe(jasmine());
+});
+
 gulp.task('test_cps', function () {
 	return gulp
 		.src('./test/cps.js')
