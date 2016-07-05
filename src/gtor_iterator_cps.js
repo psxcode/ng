@@ -9,11 +9,11 @@ var Iteration = (function () {
 	}
 
 	Iteration.resolve = function (value, done) {
-		return new Iteration(SingularSync.resolve(value), done === true);
+		return new Iteration((value && _.isFunction(value.then)) ? value : SingularSync.resolve(value), done === true);
 	};
 
 	Iteration.reject = function (reason, done) {
-		return new Iteration(SingularSync.reject(reason), done === true);
+		return new Iteration((reason && _.isFunction(reason.then)) ? reason : SingularSync.reject(reason), done === true);
 	};
 
 	Iteration.DONE = Iteration.resolve(void 0, true);
@@ -238,11 +238,16 @@ var Iterator = (function () {
 			this.iteratorStack[0].$next(function nextHandler(iteration) {
 				if (iteration.done) {
 					self.iteratorStack.shift();
-					self.iteratorStack.length ? self.iteratorStack[0].$next(nextHandler) : iterationHandler(iteration);
+					if (self.iteratorStack.length) {
+						self.$next(iterationHandler);
+					} else {
+						iterationHandler(iteration);
+					}
 				} else {
 					iteration.value.then(function (val) {
 						if (Iterator.can(val)) {
 							self.iteratorStack.unshift(Iterator(val));
+							self.$next(iterationHandler);
 						} else {
 							iterationHandler(iteration);
 						}

@@ -31,13 +31,13 @@ function SingularAsync() {
 SingularAsync.resolve = function (val) {
 	var sa = new SingularAsync();
 	sa.resolve(val);
-	return sa;
+	return sa.consumer;
 };
 
 SingularAsync.reject = function (reason) {
 	var sa = new SingularAsync();
 	sa.reject(reason);
-	return sa;
+	return sa.consumer;
 };
 
 SingularAsync.all = all;
@@ -182,10 +182,6 @@ function race(saArray) {
 	}
 
 	return result.consumer;
-}
-
-function sequense(saArray) {
-
 }
 
 module.exports = SingularAsync;

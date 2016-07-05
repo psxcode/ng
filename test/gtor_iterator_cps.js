@@ -1,6 +1,8 @@
 "use strict";
 
 var Iterator = require('../src/gtor_iterator_cps');
+var SS = require('../src/gtor_singular_sync');
+var SA = require('../src/gtor_singular_async');
 
 describe('GTOR Iterator', function () {
 
@@ -286,7 +288,7 @@ describe('GTOR Iterator', function () {
 		function mp(val) { return val * 2; }
 	});
 
-	it('allows to chain \'filter\' and \'map\'', function () {
+	it('allows to chain \'filter\' and \'map\'', function (done) {
 		var arr = [1, 2, 3, 4, 5];
 		var arrCompare = arr.filter(flt).map(mp);
 		var testIndex = 0;
@@ -299,6 +301,7 @@ describe('GTOR Iterator', function () {
 
 		function test(val) {
 			expect(val).toEqual(arrCompare[testIndex++]);
+			if (testIndex >= arrCompare.length) done();
 		}
 
 		function flt(val) { return val > 2; }
@@ -306,34 +309,35 @@ describe('GTOR Iterator', function () {
 		function mp(val) { return val * 2; }
 	});
 
-	it('allows \'reduce\' iterator', function () {
+	it('allows \'reduce\' iterator', function (done) {
 		var arr = [1, 2, 3];
 		var testIndex = 0;
-		var it = Iterator(arr)
+		Iterator(arr)
 			.reduce(function (acc, val) {
 				expect(val).toEqual(arr[testIndex++]);
 				return acc + val;
-			}, 0);
-
-		it.next(test);
+			}, 0)
+			.next(test);
 
 		function test(val) {
 			expect(val).toEqual(6);
+			done();
 		}
 	});
 
-	it('allows empty \'reduce\' to return initial value', function () {
+	it('allows empty \'reduce\' to return initial value', function (done) {
 		var arr = [1, 2, 3];
-		var it = Iterator(arr).reduce(null, 0);
-
-		it.next(test);
+		Iterator(arr)
+			.reduce(null, 0)
+			.next(test);
 
 		function test(val) {
 			expect(val).toEqual(0);
+			done();
 		}
 	});
 
-	it('allows to \'flatten\' arrays', function () {
+	it('allows to \'flatten\' arrays', function (done) {
 		var arr = [1, [2, 3, []], 4, [5, [6]]];
 		var it = Iterator(arr)
 			.flatten()
@@ -343,102 +347,101 @@ describe('GTOR Iterator', function () {
 
 		function test(val) {
 			expect(val).toEqual(21);
+			done();
 		}
 	});
 
-	it('allows to \'flatten\' any iterables', function () {
+	it('allows to \'flatten\' any iterables', function (done) {
 		var arr = [gen, {next: Iterator.func(gen)}, [3, {v1: 4, v2: gen}, [Iterator([2, 3])]], {}, 4, [5, [6]]];
-		var it = Iterator(arr)
+		Iterator(arr)
 			.flatten()
-			.reduce(accumulate, 0);
-
-		it.next(test);
+			.reduce(accumulate, 0)
+			.next(test);
 
 		function test(val) {
 			expect(val).toEqual(42);
+			done();
 		}
 
 		function gen() {return 5;}
 	});
 
-	it('allows to \'cycle\' any iterators', function () {
+	it('allows to \'cycle\' any iterators', function (done) {
 		var arr = [1, 2, 3];
-		var it = Iterator(arr)
+		Iterator(arr)
 			.cycle(3)
-			.reduce(accumulate, 0);
-
-		it.next(test);
+			.reduce(accumulate, 0)
+			.next(test);
 
 		function test(val) {
 			expect(val).toEqual(18);
+			done();
 		}
 	});
 
-	it('allows to chain \'cycle\' iterators', function () {
+	it('allows to chain \'cycle\' iterators', function (done) {
 		var arr = [1, 2, 3];
-		var it = Iterator(arr)
+		Iterator(arr)
 			.cycle(3)
 			.cycle(3)
-			.reduce(accumulate, 0);
-
-		it.next(test);
+			.reduce(accumulate, 0)
+			.next(test);
 
 		function test(val) {
 			expect(val).toEqual(54);
+			done();
 		}
 	});
 
-	it('allows to chain \'map\', \'filter\' and \'reduce\'', function () {
+	it('allows to chain \'map\', \'filter\' and \'reduce\'', function (done) {
 		var arr = [1, 2, 3, 4];
-		var it = Iterator(arr)
+		Iterator(arr)
 			.map(function (val) {
 				return val * 2;
 			})
 			.filter(function (val) {
 				return val > 4;
 			})
-			.reduce(accumulate, 0);
-
-		it.next(test);
+			.reduce(accumulate, 0)
+			.next(test);
 
 		function test(val) {
 			expect(val).toEqual(14);
+			done();
 		}
 	});
 
-	it('allows \'map\' handler to catch errors thrown in uplevel handlers', function () {
+	it('allows \'map\' handler to catch errors thrown in uplevel handlers', function (done) {
 		var spy = jasmine.createSpy('spy');
 		var errSpy = jasmine.createSpy('errSpy');
 
 		var arr = [1, 2, 3, 4];
-		var it = Iterator(arr)
+		Iterator(arr)
 			.map(throwFunc)
 			.map(spy, errSpy)
-			.reduce();
-
-		it.next();
+			.reduce()
+			.next(done);
 
 		expect(spy).not.toHaveBeenCalled();
 		expect(errSpy).toHaveBeenCalledTimes(arr.length);
 	});
 
-	it('allows \'filter\' handler to catch errors thrown in uplevel handlers', function () {
+	it('allows \'filter\' handler to catch errors thrown in uplevel handlers', function (done) {
 		var spy = jasmine.createSpy('spy');
 		var errSpy = jasmine.createSpy('errSpy');
 
 		var arr = [1, 2, 3, 4];
-		var it = Iterator(arr)
+		Iterator(arr)
 			.map(throwFunc)
 			.filter(spy, errSpy)
-			.reduce();
-
-		it.next();
+			.reduce()
+			.next(done);
 
 		expect(spy).not.toHaveBeenCalled();
 		expect(errSpy).toHaveBeenCalledTimes(arr.length);
 	});
 
-	it('allows \'catch\' to handle errors thrown in uplevel handlers', function () {
+	it('allows \'catch\' to handle errors thrown in uplevel handlers', function (done) {
 		var errSpy = jasmine.createSpy('errSpy');
 
 		var arr = [1, 2, 3, 4];
@@ -446,42 +449,42 @@ describe('GTOR Iterator', function () {
 			.map(throwFunc)
 			.catch(errSpy)
 			.reduce()
-			.next();
+			.next(done);
 
 		expect(errSpy).toHaveBeenCalledTimes(arr.length);
 	});
 
-	it('allows \'catch\' to resolve values', function () {
+	it('allows \'catch\' to resolve values', function (done) {
 		var arr = [1, 2, 3, 4];
 		var testIndex = 0;
-		var it = Iterator(arr)
+		Iterator(arr)
 			.map(throwFunc)
 			.catch(function (e) {
 				return arr[testIndex++];
 			})
-			.reduce(accumulate, 0);
-
-		it.next(test);
+			.reduce(accumulate, 0)
+			.next(test);
 
 		function test(val) {
 			expect(val).toEqual(10);
+			done();
 		}
 	});
 
-	it('allows empty \'catch\' to resolve values as undefined', function () {
+	it('allows empty \'catch\' to resolve values as undefined', function (done) {
 		var arr = [1, 2, 3, 4];
-		var it = Iterator(arr)
+		Iterator(arr)
 			.map(throwFunc)
-			.catch();
-
-		it.next(test);
+			.catch()
+			.next(test);
 
 		function test(val) {
 			expect(val).toEqual(void 0);
+			done();
 		}
 	});
 
-	it('errors propagate without invoking resolvers in chain', function () {
+	it('errors propagate without invoking resolvers in chain', function (done) {
 		var spy = jasmine.createSpy('spy');
 
 		var arr = [1, 2, 3, 4];
@@ -489,16 +492,38 @@ describe('GTOR Iterator', function () {
 			.map(throwFunc)
 			.map(spy)
 			.catch()
-			.next();
+			.next(done);
 
 		expect(spy).not.toHaveBeenCalled();
 	});
 
-	it('allows to convert iterator to Array', function () {
+	it('allows to convert iterator to Array', function (done) {
 		var arr = [1, 2, 3, 4];
-		Iterator(arr).toArray(function (val) {
-			expect(val).toEqual(arr);
+		Iterator(arr).toArray(function (result) {
+			expect(result).toEqual(arr);
+			done();
 		});
 
+	});
+
+	it('allows to use SingularSync as value and resolves to its value', function (done) {
+		var arr = [
+			SS.resolve(1),
+			SS.resolve(2),
+			SS.resolve(3)
+		];
+		var testArr = [1, 2, 3];
+		var testIndex = 0;
+
+		var it = Iterator(arr);
+
+		it.next(test);
+		it.next(test);
+		it.next(test);
+
+		function test(val) {
+			expect(val).toEqual(testArr[testIndex++]);
+			if (testIndex >= testArr.length) done();
+		}
 	});
 });

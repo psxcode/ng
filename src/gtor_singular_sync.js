@@ -23,13 +23,13 @@ function SingularSync() {
 SingularSync.resolve = function (val) {
 	var ss = new SingularSync();
 	ss.resolve(val);
-	return ss;
+	return ss.consumer;
 };
 
 SingularSync.reject = function (reason) {
 	var ss = new SingularSync();
 	ss.reject(reason);
-	return ss;
+	return ss.consumer;
 };
 
 SingularSync.prototype.isPending = prereq.singularIsPending;
