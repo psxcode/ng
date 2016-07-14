@@ -79,7 +79,7 @@ SingularSync.prototype.finally = function (handler) {
 	if (_.isFunction(handler)) {
 		this.isResolved() ? handler(this.$$value) : handler();
 	}
-	return this.consumer();
+	return this.consumer;
 };
 
 SingularSync.prototype.resolve = function (val) {

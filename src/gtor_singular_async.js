@@ -87,6 +87,8 @@ SingularAsync.prototype.resolve = function (val) {
 	if (!this.isPending()) {
 		this.$$invoke();
 	}
+
+	//return this.consumer;
 };
 
 SingularAsync.prototype.reject = function (val) {
@@ -97,6 +99,8 @@ SingularAsync.prototype.reject = function (val) {
 	}
 
 	this.$$invoke();
+
+	//return this.consumer;
 };
 
 SingularAsync.prototype.$$invoke = function () {
